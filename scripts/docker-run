@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Convenience wrapper around `docker run` for Retainer.
+#
+# - Loads .env from the repo root (or wherever you point to via
+#   --env-file) so ANTHROPIC_API_KEY can live alongside the
+#   project rather than your shell rc.
+# - Builds the image if it isn't tagged yet (or pass --rebuild
+#   to force).
+# - Bind-mounts $HOME/retainer as the workspace so memory
+#   persists across runs (--workspace PATH overrides).
+# - Picks an unused TCP port near 7878 if 7878 is in use.
+# - Exposes the webui at http://localhost:<port>/.
+#
+# Usage:
+#   scripts/docker-run                       # boot, attached
+#   scripts/docker-run -d                    # detach
+#   scripts/docker-run --workspace ~/work    # custom workspace
+#   scripts/docker-run --rebuild             # rebuild image first
+#   scripts/docker-run --env-file ./other-env
+#
+# Stop a detached container with: docker stop retainer
+
+set -euo pipefail
+
+# Allow being invoked from anywhere; chdir to the repo root.
+if repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" && [[ -n "$repo_root" ]]; then
+    cd "$repo_root"
+else
+    cd "$(dirname "$0")/.."
+fi
+
+# ---- defaults ------------------------------------------------------
+
+image="retainer:latest"
+container_name="retainer"
+workspace="${RETAINER_WORKSPACE:-$HOME/retainer}"
+port="7878"
+detach="0"
+rebuild="0"
+env_file=".env"
+
+# ---- flag parsing --------------------------------------------------
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -d|--detach) detach="1"; shift ;;
+        --rebuild) rebuild="1"; shift ;;
+        --workspace) workspace="$2"; shift 2 ;;
+        --workspace=*) workspace="${1#*=}"; shift ;;
+        --port) port="$2"; shift 2 ;;
+        --port=*) port="${1#*=}"; shift ;;
+        --env-file) env_file="$2"; shift 2 ;;
+        --env-file=*) env_file="${1#*=}"; shift ;;
+        --image) image="$2"; shift 2 ;;
+        --image=*) image="${1#*=}"; shift ;;
+        --name) container_name="$2"; shift 2 ;;
+        --name=*) container_name="${1#*=}"; shift ;;
+        -h|--help)
+            sed -n '2,22p' "$0" | sed 's/^# \?//'
+            exit 0
+            ;;
+        *)
+            echo "unknown flag: $1" >&2
+            exit 2
+            ;;
+    esac
+done
+
+# ---- build if missing or asked -------------------------------------
+
+if [[ "$rebuild" == "1" ]] || ! docker image inspect "$image" >/dev/null 2>&1; then
+    echo "docker-run: building $image..."
+    docker build -t "$image" .
+fi
+
+# ---- prepare workspace dir on host ---------------------------------
+
+mkdir -p "$workspace"
+
+# ---- env file resolution -------------------------------------------
+
+env_args=()
+if [[ -f "$env_file" ]]; then
+    env_args+=(--env-file "$env_file")
+    echo "docker-run: loading env from $env_file"
+else
+    # Fall through to the shell's existing ANTHROPIC_API_KEY if any.
+    # The container still works without it (mock provider).
+    if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+        env_args+=(-e ANTHROPIC_API_KEY)
+    fi
+fi
+
+# ---- handle a stale container ---------------------------------------
+
+if docker ps -a --filter "name=^${container_name}$" --format '{{.Names}}' | grep -q .; then
+    echo "docker-run: removing existing container $container_name"
+    docker rm -f "$container_name" >/dev/null
+fi
+
+# ---- launch ---------------------------------------------------------
+
+run_args=(--name "$container_name")
+if [[ "$detach" == "1" ]]; then
+    run_args+=(-d --rm)
+else
+    run_args+=(--rm -it)
+fi
+run_args+=("${env_args[@]+"${env_args[@]}"}")
+run_args+=(-v "$workspace:/workspace" -p "$port:7878")
+
+echo "docker-run: starting $container_name (workspace=$workspace, port=$port)"
+docker run "${run_args[@]}" "$image"
+
+if [[ "$detach" == "1" ]]; then
+    echo "docker-run: ready — open http://localhost:$port/"
+    echo "docker-run: stop with: docker stop $container_name"
+fi

@@ -1,0 +1,881 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>retainer</title>
+  <style>
+    /*
+       Source Serif 4 — same bundled font as the desktop page so a
+       saved-to-home-screen mobile shortcut renders without a network
+       fetch.
+    */
+    @font-face {
+      font-family: 'Source Serif 4';
+      src: url('/static/fonts/source-serif-4-latin.woff2') format('woff2');
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    /*
+       Mobile palette mirrors the desktop one so the chat history
+       reads as one product across surfaces. Bottom-tab bar uses the
+       safe-area inset so it sits above iOS Home Indicator.
+    */
+    :root {
+      --bg: #faf6ef;
+      --bg-2: #f3ebd9;
+      --surface: #ffffff;
+      --fg: #1c2840;
+      --fg-muted: #7a6d5d;
+      --accent: #5d3520;
+      --accent-soft: #8b5a3c;
+      --accent-warning: #b8821e;
+      --accent-error: #b94838;
+      --accent-ok: #5a7a3a;
+      --border: #e8dfd1;
+      --shadow: 0 1px 2px rgba(28, 40, 64, 0.06), 0 0 0 1px rgba(28, 40, 64, 0.04);
+      --tab-bar-height: 56px;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font: 16px/1.55 "Source Serif 4", Charter, "Iowan Old Style", Georgia, serif;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior-y: contain;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+
+    /* ---- Top bar ---- */
+    .topbar {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 0.9rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .topbar .title {
+      flex: 1;
+      font-size: 1.1rem;
+      font-weight: 600;
+      line-height: 1.1;
+    }
+    .topbar .title small {
+      display: block;
+      font-size: 0.72rem;
+      color: var(--fg-muted);
+      font-family: ui-monospace, "SF Mono", "JetBrains Mono", monospace;
+      font-weight: 400;
+    }
+    .topbar .badge {
+      font-size: 0.72rem;
+      padding: 0.18rem 0.55rem;
+      border-radius: 999px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--fg-muted);
+    }
+    .topbar .badge.ok { color: var(--accent-ok); border-color: var(--accent-ok); }
+    .topbar .badge.error { color: var(--accent-error); border-color: var(--accent-error); }
+    .topbar button.drawer-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      width: 36px;
+      height: 36px;
+      font-size: 1rem;
+      cursor: pointer;
+      color: var(--fg);
+    }
+
+    /* ---- Drawer (date picker) ---- */
+    .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(28, 40, 64, 0.4);
+      display: none;
+      z-index: 20;
+    }
+    .drawer-overlay.open { display: block; }
+    .drawer {
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: min(85vw, 320px);
+      background: var(--bg);
+      transform: translateX(-100%);
+      transition: transform 0.18s ease-out;
+      z-index: 21;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 4px 0 12px rgba(28, 40, 64, 0.15);
+    }
+    .drawer.open { transform: translateX(0); }
+    .drawer header {
+      padding: 0.8rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+    }
+    .drawer ul {
+      list-style: none;
+      margin: 0;
+      padding: 0.4rem 0;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .drawer li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.7rem 1rem;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+    }
+    .drawer li.today { font-weight: 600; }
+    .drawer li.active { background: var(--bg-2); }
+    .drawer li .day-export {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+
+    /* ---- Views ---- */
+    .views {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .view {
+      display: none;
+      flex: 1;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .view.active { display: flex; }
+
+    /* ---- Chat view ---- */
+    #log {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.75rem 0.9rem calc(var(--tab-bar-height) + var(--safe-bottom) + 5rem);
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+    .msg {
+      max-width: 92%;
+      padding: 0.6rem 0.85rem;
+      border-radius: 10px;
+      word-wrap: break-word;
+      overflow-wrap: anywhere;
+      line-height: 1.5;
+    }
+    .msg.user {
+      background: var(--bg-2);
+      align-self: flex-end;
+      border: 1px solid var(--border);
+      white-space: pre-wrap;
+    }
+    .msg.cog {
+      background: var(--surface);
+      align-self: flex-start;
+      box-shadow: var(--shadow);
+      border-left: 3px solid var(--accent);
+    }
+    .msg.cog.refusal { border-left-color: var(--accent-warning); }
+    .msg.cog.error { border-left-color: var(--accent-error); color: var(--accent-error); }
+    .msg.cog p { margin: 0 0 0.5rem; }
+    .msg.cog p:last-child { margin-bottom: 0; }
+    .msg.cog code {
+      font-family: ui-monospace, "SF Mono", "JetBrains Mono", monospace;
+      font-size: 0.875em;
+      background: var(--bg-2);
+      padding: 0.05em 0.35em;
+      border-radius: 3px;
+    }
+    .msg.cog pre {
+      background: var(--bg-2);
+      padding: 0.55rem 0.7rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 0.4rem 0;
+      border: 1px solid var(--border);
+    }
+
+    /* Past-day banner appears at the top of the chat log when the
+       operator drilled into a previous date through the drawer. */
+    .past-day-banner {
+      padding: 0.55rem 0.7rem;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 0.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.92rem;
+    }
+    .past-day-banner .back-to-today {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-weight: 600;
+      font-size: inherit;
+      cursor: pointer;
+      padding: 0;
+      font-family: inherit;
+    }
+
+    /* ---- Chat input (sticky above tab bar) ---- */
+    .chat-input {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: calc(var(--tab-bar-height) + var(--safe-bottom));
+      padding: 0.5rem 0.75rem;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 0.4rem;
+      z-index: 10;
+    }
+    .chat-input textarea {
+      flex: 1;
+      background: var(--surface);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.55rem 0.7rem;
+      font: inherit;
+      resize: none;
+      max-height: 6rem;
+      box-shadow: var(--shadow);
+    }
+    .chat-input button {
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 8px;
+      padding: 0 1rem;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .chat-input button:disabled {
+      background: var(--fg-muted);
+    }
+    body.viewing-day .chat-input { display: none; }
+    body.viewing-day #log { padding-bottom: calc(var(--tab-bar-height) + var(--safe-bottom) + 1rem); }
+
+    /* ---- Library view ---- */
+    #lib-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.5rem 0.75rem calc(var(--tab-bar-height) + var(--safe-bottom) + 1rem);
+      list-style: none;
+      margin: 0;
+    }
+    #lib-list li {
+      padding: 0.7rem 0.85rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      margin-bottom: 0.5rem;
+      cursor: pointer;
+    }
+    #lib-list .doc-title {
+      font-weight: 600;
+      display: block;
+      margin-bottom: 0.15rem;
+    }
+    #lib-list .doc-meta {
+      font-size: 0.78rem;
+      color: var(--fg-muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .lib-empty {
+      padding: 1.2rem 0.85rem;
+      color: var(--fg-muted);
+      font-style: italic;
+      text-align: center;
+    }
+    /* Library reader (full-screen overlay) */
+    .lib-reader {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      z-index: 30;
+      display: none;
+      flex-direction: column;
+    }
+    .lib-reader.open { display: flex; }
+    .lib-reader header {
+      padding: 0.6rem 0.9rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .lib-reader header button {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.3rem 0.7rem;
+      cursor: pointer;
+      font: inherit;
+    }
+    .lib-reader header h1 {
+      flex: 1;
+      font-size: 1rem;
+      margin: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .lib-reader .body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.85rem 0.9rem 1.5rem;
+    }
+    .lib-reader .body pre {
+      white-space: pre-wrap;
+      font: inherit;
+      margin: 0;
+    }
+    .lib-reader .citation {
+      padding: 0.55rem 0.85rem;
+      background: var(--bg-2);
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: ui-monospace, "SF Mono", "JetBrains Mono", monospace;
+      font-size: 0.78rem;
+    }
+    .lib-reader .citation button.copy {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.2rem 0.6rem;
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+    .lib-reader .citation button.copy.copied { color: var(--accent-ok); border-color: var(--accent-ok); }
+
+    /* ---- Notifications view ---- */
+    #notif-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.5rem 0.75rem calc(var(--tab-bar-height) + var(--safe-bottom) + 1rem);
+      list-style: none;
+      margin: 0;
+    }
+    #notif-list li {
+      padding: 0.65rem 0.85rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      margin-bottom: 0.45rem;
+    }
+    #notif-list .notif-status {
+      font-size: 0.78rem;
+      color: var(--fg-muted);
+      font-variant-numeric: tabular-nums;
+    }
+    #notif-list .notif-line {
+      margin-top: 0.2rem;
+      font-size: 0.95rem;
+    }
+    .notif-empty {
+      padding: 1.5rem 1rem;
+      color: var(--fg-muted);
+      font-style: italic;
+      text-align: center;
+    }
+
+    /* ---- Bottom tab bar ---- */
+    .tabbar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: calc(var(--tab-bar-height) + var(--safe-bottom));
+      padding-bottom: var(--safe-bottom);
+      display: flex;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      z-index: 5;
+    }
+    .tabbar button {
+      flex: 1;
+      background: none;
+      border: none;
+      font: inherit;
+      font-size: 0.82rem;
+      color: var(--fg-muted);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      align-items: center;
+      justify-content: center;
+      padding: 0.4rem 0;
+    }
+    .tabbar button.active {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .tabbar button .icon {
+      font-size: 1.05rem;
+      line-height: 1;
+    }
+
+    /* ---- Activity strip (between log + input) ---- */
+    .activity {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: calc(var(--tab-bar-height) + var(--safe-bottom) + 4rem);
+      padding: 0.2rem 0.75rem;
+      font-size: 0.78rem;
+      color: var(--fg-muted);
+      font-style: italic;
+      pointer-events: none;
+      z-index: 4;
+    }
+    .activity.idle { display: none; }
+    .activity.thinking { color: var(--accent); font-style: normal; }
+    .activity.using_tools { color: var(--accent-warning); font-style: normal; }
+    .activity.retrying { color: var(--accent-warning); font-style: normal; font-weight: 500; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="title">
+      <span id="agent-name">connecting…</span>
+      <small id="instance-id"></small>
+    </div>
+    <span class="badge" id="status">connecting…</span>
+    <button class="drawer-btn" id="drawer-open" aria-label="Open day drawer">☰</button>
+  </div>
+
+  <!-- Drawer (date picker) -->
+  <div class="drawer-overlay" id="drawer-overlay"></div>
+  <div class="drawer" id="drawer" aria-label="Chat history">
+    <header>Chats</header>
+    <ul id="day-list"></ul>
+  </div>
+
+  <div class="views">
+    <section class="view active" id="view-chat" data-view="chat">
+      <div id="log" aria-live="polite"></div>
+    </section>
+    <section class="view" id="view-notif" data-view="notif">
+      <ul id="notif-list"><li class="notif-empty">no notifications yet — ambient signals will appear here as the cog reports them</li></ul>
+    </section>
+  </div>
+
+  <!-- Activity strip + chat input (chat view only via body class) -->
+  <div id="activity" class="activity idle"></div>
+  <form class="chat-input" id="chat-input" autocomplete="off">
+    <textarea id="input" placeholder="message the cog…" rows="1"></textarea>
+    <button id="send" type="submit">send</button>
+  </form>
+
+  <!-- Bottom tab bar -->
+  <nav class="tabbar" role="tablist">
+    <button data-view="chat" class="active" role="tab"><span class="icon">💬</span><span>chat</span></button>
+    <button data-view="notif" role="tab"><span class="icon">🔔</span><span>notes</span></button>
+  </nav>
+
+  <script>
+    (function () {
+      // ---- DOM lookups ----
+      const logEl = document.getElementById('log');
+      const inputEl = document.getElementById('input');
+      const sendBtn = document.getElementById('send');
+      const formEl = document.getElementById('chat-input');
+      const statusEl = document.getElementById('status');
+      const agentNameEl = document.getElementById('agent-name');
+      const instanceIdEl = document.getElementById('instance-id');
+      const activityEl = document.getElementById('activity');
+      const drawerEl = document.getElementById('drawer');
+      const drawerOverlay = document.getElementById('drawer-overlay');
+      const dayListEl = document.getElementById('day-list');
+      const notifListEl = document.getElementById('notif-list');
+
+      // ---- Tab navigation ----
+      // Tab state lives in the page closure. The mobile route doesn't
+      // persist active tab across reloads — operators arriving via
+      // a notification or external link expect to land on chat.
+      function showView(name) {
+        document.querySelectorAll('.view').forEach(v => {
+          v.classList.toggle('active', v.dataset.view === name);
+        });
+        document.querySelectorAll('.tabbar button').forEach(b => {
+          b.classList.toggle('active', b.dataset.view === name);
+        });
+        document.body.classList.toggle('view-chat', name === 'chat');
+        document.body.classList.toggle('view-notif', name === 'notif');
+      }
+      document.querySelectorAll('.tabbar button').forEach(btn => {
+        btn.addEventListener('click', () => showView(btn.dataset.view));
+      });
+
+      // ---- Markdown rendering (subset of desktop renderMarkdown) ----
+      // Mobile keeps a smaller surface — paragraphs, code blocks,
+      // inline code, bold/italic, lists, links. Tables and tree
+      // structure aren't worth the screen real estate at this
+      // viewport.
+      function escapeHTML(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+      }
+      function safeURL(url) {
+        const t = url.trim();
+        if (/^(https?:|mailto:|#|\/)/i.test(t)) return t;
+        return '#';
+      }
+      function renderMarkdown(input) {
+        const blocks = [];
+        let text = input.replace(/```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
+          const i = blocks.length;
+          blocks.push('<pre><code>' + escapeHTML(code.replace(/\n$/, '')) + '</code></pre>');
+          return ' BLOCK' + i + ' ';
+        });
+        text = escapeHTML(text);
+        text = text.replace(/`([^`]+)`/g, (_, code) => '<code>' + code + '</code>');
+        text = text.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+        text = text.replace(/(^|[^\w*])\*([^*\n]+)\*(?=[^\w*]|$)/g, '$1<em>$2</em>');
+        text = text.replace(/\[([^\]\n]+)\]\(([^)\n]+)\)/g, (_, label, url) =>
+          '<a href="' + escapeHTML(safeURL(url)) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>');
+        const lines = text.split('\n');
+        const out = [];
+        let listType = null;
+        const closeList = () => { if (listType) { out.push('</' + listType + '>'); listType = null; } };
+        for (const raw of lines) {
+          let m = /^- (.+)$/.exec(raw);
+          if (m) {
+            if (listType !== 'ul') { closeList(); out.push('<ul>'); listType = 'ul'; }
+            out.push('<li>' + m[1] + '</li>');
+            continue;
+          }
+          m = /^\d+\. (.+)$/.exec(raw);
+          if (m) {
+            if (listType !== 'ol') { closeList(); out.push('<ol>'); listType = 'ol'; }
+            out.push('<li>' + m[1] + '</li>');
+            continue;
+          }
+          if (raw.trim() === '') closeList();
+          out.push(raw);
+        }
+        closeList();
+        text = out.join('\n');
+        text = text.split(/\n{2,}/).map(chunk => {
+          chunk = chunk.trim();
+          if (!chunk) return '';
+          if (/^<(ul|ol|pre)/.test(chunk) || /^ BLOCK\d+ $/.test(chunk)) return chunk;
+          return '<p>' + chunk.replace(/\n/g, '<br>') + '</p>';
+        }).join('\n');
+        text = text.replace(/ BLOCK(\d+) /g, (_, i) => blocks[Number(i)]);
+        return text;
+      }
+
+      // ---- Chat ----
+      function appendUserMsg(text) {
+        const w = document.createElement('div');
+        w.className = 'msg user';
+        w.textContent = text;
+        logEl.appendChild(w);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      function appendCogMsg(body, kind) {
+        const w = document.createElement('div');
+        w.className = 'msg cog' + (kind ? ' ' + kind : '');
+        w.innerHTML = renderMarkdown(body || '(empty reply)');
+        logEl.appendChild(w);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      function appendErrorMsg(body) {
+        const w = document.createElement('div');
+        w.className = 'msg cog error';
+        w.textContent = body;
+        logEl.appendChild(w);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      function setStatus(text, cls) {
+        statusEl.textContent = text;
+        statusEl.className = 'badge ' + (cls || '');
+      }
+      function setIdentity(name, instance) {
+        if (name) { agentNameEl.textContent = name; }
+        if (instance) { instanceIdEl.textContent = instance; }
+      }
+      function setActivity(m) {
+        const status = m && m.status;
+        if (!status || status === 'idle') {
+          activityEl.className = 'activity idle';
+          activityEl.textContent = '';
+          return;
+        }
+        let label;
+        if (status === 'retrying') {
+          const reason = m.retry_reason === 'rate_limited'
+            ? 'rate limited'
+            : (m.retry_reason || 'retrying');
+          const secs = Math.round((m.retry_delay_ms || 0) / 1000);
+          if (m.retry_max_attempts) {
+            label = `${reason} · ${m.retry_attempt}/${m.retry_max_attempts} · ${secs}s`;
+          } else {
+            label = `${reason} · ${secs}s`;
+          }
+        } else {
+          label = status.replace(/_/g, ' ');
+          if (m.turn && m.max_turns) label += ' · turn ' + m.turn + '/' + m.max_turns;
+          if (m.tools && m.tools.length) label += ' · ' + m.tools.join(', ');
+          if (m.input_tokens || m.output_tokens) label += ' · ' + (m.input_tokens || 0) + '↓ / ' + (m.output_tokens || 0) + '↑';
+        }
+        activityEl.className = 'activity ' + status;
+        activityEl.textContent = label;
+      }
+
+      async function send() {
+        const text = inputEl.value.trim();
+        if (!text) return;
+        sendBtn.disabled = true;
+        appendUserMsg(text);
+        inputEl.value = '';
+        try {
+          const res = await fetch('/api/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ input: text }),
+          });
+          if (!res.ok) {
+            const errBody = await res.text();
+            appendErrorMsg('submit failed: ' + errBody);
+          }
+        } catch (err) {
+          appendErrorMsg('submit error: ' + err.message);
+        } finally {
+          sendBtn.disabled = false;
+        }
+      }
+      formEl.addEventListener('submit', (e) => { e.preventDefault(); send(); });
+      inputEl.addEventListener('keydown', function (ev) {
+        // On mobile the soft keyboard's "send" button hits Enter
+        // without shift. Mirror that to send.
+        if (ev.key === 'Enter' && !ev.shiftKey) {
+          ev.preventDefault();
+          send();
+        }
+      });
+
+      // ---- SSE stream ----
+      // Same envelope shape as desktop. Activity events also feed
+      // the notifications view so an operator who's swiped away
+      // from chat still sees noteworthy signals.
+      const recentNotifs = []; // {timestamp, line}
+      function pushNotif(line) {
+        recentNotifs.unshift({ ts: new Date(), line });
+        if (recentNotifs.length > 50) recentNotifs.length = 50;
+        renderNotifs();
+      }
+      function renderNotifs() {
+        notifListEl.innerHTML = '';
+        if (recentNotifs.length === 0) {
+          const li = document.createElement('li');
+          li.className = 'notif-empty';
+          li.textContent = 'no notifications yet — ambient signals will appear here as the cog reports them';
+          notifListEl.appendChild(li);
+          return;
+        }
+        for (const n of recentNotifs) {
+          const li = document.createElement('li');
+          const ts = document.createElement('div');
+          ts.className = 'notif-status';
+          ts.textContent = n.ts.toISOString().replace('T', ' ').slice(0, 19);
+          const ln = document.createElement('div');
+          ln.className = 'notif-line';
+          ln.textContent = n.line;
+          li.appendChild(ts);
+          li.appendChild(ln);
+          notifListEl.appendChild(li);
+        }
+      }
+
+      function openStream() {
+        const es = new EventSource('/api/stream');
+        es.addEventListener('ready', function (ev) {
+          const m = JSON.parse(ev.data);
+          setStatus('connected', 'ok');
+          setIdentity(m.agent_name, m.instance_id);
+        });
+        es.addEventListener('reply', function (ev) {
+          const m = JSON.parse(ev.data);
+          let kind = '';
+          if (m.reply_kind === 'refusal') kind = 'refusal';
+          if (m.reply_kind === 'error') kind = 'error';
+          appendCogMsg(m.body, kind);
+          setActivity({status: 'idle'});
+        });
+        es.addEventListener('activity', function (ev) {
+          const m = JSON.parse(ev.data);
+          setActivity(m);
+          // Treat tools/turn-bounded activity events as
+          // notifications worth surfacing on the notes tab.
+          // Skip "idle" / "thinking" — they're noise — but record
+          // when tools fire or when a turn ticks past 1, OR when
+          // a retry backoff hits (operator might be away from chat
+          // when rate limits hit).
+          if (m.status === 'using_tools' && m.tools && m.tools.length) {
+            pushNotif('cog used tools: ' + m.tools.join(', '));
+          }
+          if (m.status === 'retrying') {
+            const reason = m.retry_reason || 'retrying';
+            const secs = Math.round((m.retry_delay_ms || 0) / 1000);
+            pushNotif(`${reason} · waiting ${secs}s before retry ${m.retry_attempt}/${m.retry_max_attempts}`);
+          }
+        });
+        es.addEventListener('error', function (ev) {
+          if (ev.data) {
+            try { const m = JSON.parse(ev.data); appendErrorMsg(m.message || 'error'); } catch (_) {}
+          }
+          setStatus('disconnected', 'error');
+        });
+        es.onerror = function () { setStatus('disconnected', 'error'); };
+      }
+
+      // ---- Drawer (day picker) ----
+      let viewingDay = null;
+      function todayDate() {
+        const d = new Date();
+        return d.getFullYear() + '-' +
+               String(d.getMonth() + 1).padStart(2, '0') + '-' +
+               String(d.getDate()).padStart(2, '0');
+      }
+      function openDrawer() {
+        drawerEl.classList.add('open');
+        drawerOverlay.classList.add('open');
+        refreshDayList();
+      }
+      function closeDrawer() {
+        drawerEl.classList.remove('open');
+        drawerOverlay.classList.remove('open');
+      }
+      document.getElementById('drawer-open').addEventListener('click', openDrawer);
+      drawerOverlay.addEventListener('click', closeDrawer);
+
+      function refreshDayList() {
+        fetch('/api/days')
+          .then(r => r.json())
+          .then(data => renderDayList(data.dates || []))
+          .catch(() => renderDayList([]));
+      }
+      function renderDayList(dates) {
+        const today = todayDate();
+        const merged = dates.includes(today) ? dates : [today, ...dates];
+        dayListEl.innerHTML = '';
+        for (const date of merged) {
+          const li = document.createElement('li');
+          if (date === today) li.classList.add('today');
+          if (viewingDay === date || (viewingDay === null && date === today)) li.classList.add('active');
+          const label = document.createElement('span');
+          label.textContent = date === today ? 'Today · ' + date : date;
+          label.addEventListener('click', () => {
+            switchToDay(date === today ? null : date);
+            closeDrawer();
+          });
+          const dl = document.createElement('a');
+          dl.href = '/api/days/' + encodeURIComponent(date) + '/export.md';
+          dl.className = 'day-export';
+          dl.textContent = '↓';
+          dl.addEventListener('click', (e) => e.stopPropagation());
+          li.appendChild(label);
+          li.appendChild(dl);
+          dayListEl.appendChild(li);
+        }
+      }
+      function switchToDay(date) {
+        viewingDay = date;
+        document.body.classList.toggle('viewing-day', date !== null);
+        if (date === null) {
+          // Live mode — leave the existing log alone (operator may
+          // want to see what landed while they were browsing).
+          // Strip any past-day banner.
+          const b = document.getElementById('past-day-banner');
+          if (b) b.remove();
+          return;
+        }
+        renderPastDay(date);
+      }
+      function renderPastDay(date) {
+        logEl.innerHTML = '';
+        const banner = document.createElement('div');
+        banner.id = 'past-day-banner';
+        banner.className = 'past-day-banner';
+        const left = document.createElement('span');
+        left.textContent = 'Viewing ' + date;
+        const right = document.createElement('button');
+        right.className = 'back-to-today';
+        right.textContent = '← today';
+        right.addEventListener('click', () => switchToDay(null));
+        banner.appendChild(left);
+        banner.appendChild(right);
+        logEl.appendChild(banner);
+
+        fetch('/api/days/' + encodeURIComponent(date))
+          .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
+          .then(d => {
+            const turns = d.turns || [];
+            if (turns.length === 0) {
+              const empty = document.createElement('div');
+              empty.style.color = 'var(--fg-muted)';
+              empty.style.fontStyle = 'italic';
+              empty.style.padding = '0.5rem';
+              empty.textContent = 'No cycles on this date.';
+              logEl.appendChild(empty);
+              return;
+            }
+            for (const t of turns) {
+              if (t.role === 'user') appendUserMsg(t.text);
+              else if (t.role === 'assistant') appendCogMsg(t.text);
+              else if (t.role === 'error') appendErrorMsg(t.text);
+            }
+            logEl.scrollTop = 0;
+          })
+          .catch(err => appendErrorMsg('Failed to load ' + date + ': ' + err));
+      }
+
+
+      // ---- Boot ----
+      fetch('/api/health').then(r => r.json()).then(h => {
+        if (h.connected) setStatus('connected', 'ok');
+        setIdentity(h.agent_name, h.instance_id);
+      }).catch(() => {});
+      openStream();
+      // First-paint default: chat. The operator can swipe-equivalent
+      // (tap the bottom tabs) to reach library + notes.
+      showView('chat');
+    })();
+  </script>
+</body>
+</html>

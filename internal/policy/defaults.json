@@ -1,0 +1,79 @@
+{
+  "input_threshold": 0.4,
+  "tool_threshold": 0.6,
+  "output_threshold": 0.4,
+  "post_exec_threshold": 0.4,
+  "comms_outbound_threshold": 0.4,
+  "input_policies": [
+    {
+      "name": "instruction_override",
+      "pattern": "(?i)\\b(ignore|disregard|forget)\\s+(previous|all|prior|the|above)\\s+(instructions?|prompts?|rules?|directives?)\\b",
+      "importance": 0.7,
+      "magnitude": 1.0,
+      "domain": "prompt_injection"
+    },
+    {
+      "name": "system_prompt_extraction",
+      "pattern": "(?i)\\b(reveal|show|print|repeat|leak|disclose|tell\\s+me)\\s+(the|your)\\s+(system|initial|original)\\s+(prompt|instructions?|directive)\\b",
+      "importance": 0.8,
+      "magnitude": 1.0,
+      "domain": "prompt_injection"
+    },
+    {
+      "name": "role_override",
+      "pattern": "(?i)\\byou\\s+are\\s+(now|actually|really)\\s+(a|an|the)\\b",
+      "importance": 0.5,
+      "magnitude": 1.0,
+      "domain": "prompt_injection"
+    },
+    {
+      "name": "jailbreak_marker",
+      "pattern": "(?i)\\b(DAN|do\\s+anything\\s+now|developer\\s+mode|jailbreak|unrestricted\\s+mode)\\b",
+      "importance": 0.6,
+      "magnitude": 1.0,
+      "domain": "jailbreak"
+    }
+  ],
+  "tool_policies": [],
+  "output_policies": [],
+  "post_exec_policies": [],
+  "comms_outbound_policies": [
+    {
+      "name": "comms_bearer_token",
+      "pattern": "(?i)\\bbearer\\s+[A-Za-z0-9._-]{20,}\\b",
+      "importance": 0.9,
+      "magnitude": 1.0,
+      "domain": "credential_exposure"
+    },
+    {
+      "name": "comms_api_key_assignment",
+      "pattern": "(?i)\\b(api[_-]?key|apikey|secret[_-]?key|access[_-]?token|password)\\s*[:=]\\s*[A-Za-z0-9._-]{12,}",
+      "importance": 0.9,
+      "magnitude": 1.0,
+      "domain": "credential_exposure"
+    },
+    {
+      "name": "comms_localhost_url",
+      "pattern": "(?i)https?://(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|192\\.168\\.\\d+\\.\\d+|10\\.\\d+\\.\\d+\\.\\d+)",
+      "importance": 0.7,
+      "magnitude": 1.0,
+      "domain": "internal_url_exposure"
+    },
+    {
+      "name": "comms_system_jargon",
+      "pattern": "(?i)\\b(cycle_id|policy_decision|sensorium|cog\\.sock|agent_(researcher|observer|taskmaster|scheduler|comms))\\b",
+      "importance": 0.6,
+      "magnitude": 1.0,
+      "domain": "system_internals"
+    },
+    {
+      "name": "comms_raw_json_object",
+      "pattern": "(?m)^\\s*\\{\\s*\"(object|cycle_id|tool_name|status_code)\"\\s*:",
+      "importance": 0.5,
+      "magnitude": 1.0,
+      "domain": "system_internals"
+    }
+  ],
+  "path_allowlist": [],
+  "domain_allowlist": []
+}

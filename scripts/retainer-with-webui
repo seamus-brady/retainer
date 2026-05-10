@@ -1,0 +1,297 @@
+#!/usr/bin/env bash
+# retainer-with-webui: launch retainer serve + retainer-webui
+# together, wait for both to be ready, and tear them down on exit.
+#
+# Usage:
+#   retainer-with-webui [--workspace PATH] [--addr 127.0.0.1:7878]
+#                         [--cog-bin PATH] [--webui-bin PATH]
+#                         [--ephemeral] [--open]
+#
+# Workspace selection (first match wins):
+#   1. --workspace PATH
+#   2. $RETAINER_WORKSPACE
+#   3. --ephemeral             — throwaway temp dir, NOT auto-deleted
+#   4. $HOME/retainer        — persistent default
+#
+# The persistent default means agent memory (cycle log, identity,
+# narrative, facts, comms log) survives restarts. Pass --ephemeral
+# only when you want a clean-room session.
+#
+# The script picks up:
+#   - $RETAINER_WORKSPACE for the workspace dir
+#   - $RETAINER_COG_BIN / $RETAINER_WEBUI_BIN to override the
+#     binaries (default: `retainer` and `retainer-webui` on PATH)
+#
+# Failure modes:
+#   - retainer exits before the cog socket appears → script exits 1
+#     and prints the cog's stderr.
+#   - retainer-webui can't reach the socket → script exits 1.
+#   - Either child dies later → script tears down the survivor and
+#     exits with the dead child's exit code.
+#
+# Ctrl-C / SIGTERM cleanly stops both via a trap.
+
+set -euo pipefail
+
+# ---- defaults + flag parsing ---------------------------------------
+
+addr="127.0.0.1:7878"
+workspace="${RETAINER_WORKSPACE:-}"
+cog_bin="${RETAINER_COG_BIN:-retainer}"
+webui_bin="${RETAINER_WEBUI_BIN:-retainer-webui}"
+open_browser=0
+want_ephemeral=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --workspace) workspace="$2"; shift 2 ;;
+        --workspace=*) workspace="${1#*=}"; shift ;;
+        --addr) addr="$2"; shift 2 ;;
+        --addr=*) addr="${1#*=}"; shift ;;
+        --cog-bin) cog_bin="$2"; shift 2 ;;
+        --cog-bin=*) cog_bin="${1#*=}"; shift ;;
+        --webui-bin) webui_bin="$2"; shift 2 ;;
+        --webui-bin=*) webui_bin="${1#*=}"; shift ;;
+        --ephemeral) want_ephemeral=1; shift ;;
+        --open) open_browser=1; shift ;;
+        -h|--help)
+            sed -n '2,32p' "$0" | sed 's/^# \?//'
+            exit 0
+            ;;
+        *)
+            echo "unknown flag: $1" >&2
+            exit 2
+            ;;
+    esac
+done
+
+# mktemp_dir wraps mktemp with a portable template. macOS bsd-mktemp
+# treats `-t prefix` as a prefix-only mode that does NOT substitute
+# the X-string in the template — so `mktemp -d -t foo.XXXXXX` ends
+# up creating paths like /var/folders/.../foo.XXXXXX.r8g3vBp9 with
+# the literal X chars wedged in the middle. Linux GNU-mktemp
+# substitutes them. The portable shape is to hand `mktemp -d` a
+# fully-resolved template under $TMPDIR so both implementations
+# substitute the X-string in place.
+mktemp_dir() {
+    local prefix="$1"
+    local tmp="${TMPDIR:-/tmp}"
+    tmp="${tmp%/}"
+    mktemp -d "$tmp/${prefix}.XXXXXX"
+}
+
+workspace_is_ephemeral=0
+if [[ -z "$workspace" ]]; then
+    if [[ "$want_ephemeral" -eq 1 ]]; then
+        # Operator opted into a throwaway via --ephemeral. The
+        # temp dir is NOT auto-deleted on exit — so the operator
+        # can inspect cycle logs, identity.json, etc. after
+        # Ctrl-C — the OS reaps it eventually.
+        workspace="$(mktemp_dir retainer-launcher)"
+        workspace_is_ephemeral=1
+    else
+        # Persistent default. Memory (cycle log, identity, narrative,
+        # facts, comms log) survives restarts; an agent named in a
+        # prior session is the same agent in the next. Pass
+        # --ephemeral if you specifically want a clean room.
+        workspace="${HOME}/retainer"
+    fi
+fi
+
+# ---- resolve binaries ----------------------------------------------
+#
+# If the requested binaries aren't on PATH and we're sitting in a
+# Retainer checkout (git repo with cmd/retainer/), build them
+# into temp files. Means a fresh clone "just works" without a
+# go-install dance. The temp files are cleaned up on exit.
+
+build_dir=""
+
+repo_root() {
+    git rev-parse --show-toplevel 2>/dev/null
+}
+
+resolve_bin() {
+    # Echoes an absolute path to a usable binary for the given cmd,
+    # building one if needed. Args: $1 = requested name/path, $2 =
+    # cmd path under repo (e.g. ./cmd/retainer).
+    #
+    # Always resolve to an absolute path before echoing — bash treats
+    # bare names without a slash as PATH lookups at exec time, even if
+    # `[[ -x name ]]` matched a file in the current directory. So a
+    # stray `./retainer-webui` (produced by `go build ./cmd/...` from
+    # the repo root — see .gitignore) would pass the test but then
+    # fail with "command not found" downstream.
+    local requested="$1"
+    local cmd_path="$2"
+    # Already a path (absolute or relative) that exists?
+    if [[ -x "$requested" ]]; then
+        if [[ "$requested" = /* ]]; then
+            printf '%s' "$requested"
+        else
+            printf '%s' "$PWD/$requested"
+        fi
+        return 0
+    fi
+    # On PATH? (`command -v` returns an absolute path for executables;
+    # bare names get returned as-is for builtins/aliases/functions,
+    # but we don't expect any of those here.)
+    local resolved
+    resolved="$(command -v "$requested" 2>/dev/null || true)"
+    if [[ -n "$resolved" && "$resolved" = /* ]]; then
+        printf '%s' "$resolved"
+        return 0
+    fi
+    # Auto-build from repo source.
+    local root
+    root="$(repo_root)"
+    if [[ -z "$root" ]] || [[ ! -d "$root/$cmd_path" ]]; then
+        echo "error: binary not found and not running from a Retainer checkout: $requested" >&2
+        echo "       (set --cog-bin/--webui-bin, install via 'go install $cmd_path', or run from the repo root)" >&2
+        exit 1
+    fi
+    if [[ -z "$build_dir" ]]; then
+        build_dir="$(mktemp_dir wk-launcher)"
+    fi
+    local out="$build_dir/$(basename "$cmd_path")"
+    if [[ ! -x "$out" ]]; then
+        if ! ( cd "$root" && go build -o "$out" "$cmd_path" ) >&2; then
+            echo "error: failed to auto-build $cmd_path into $out" >&2
+            exit 1
+        fi
+    fi
+    printf '%s' "$out"
+}
+
+cog_bin="$(resolve_bin "$cog_bin" ./cmd/retainer)"
+webui_bin="$(resolve_bin "$webui_bin" ./cmd/retainer-webui)"
+
+if [[ -n "$build_dir" ]]; then
+    echo "retainer-with-webui: built binaries into $build_dir (auto-built from $(repo_root))"
+fi
+
+socket="$workspace/data/cog.sock"
+
+# ---- lifecycle bookkeeping -----------------------------------------
+
+cog_pid=""
+webui_pid=""
+shutting_down=0
+
+cleanup() {
+    if [[ "$shutting_down" -eq 1 ]]; then
+        return
+    fi
+    shutting_down=1
+    if [[ -n "$webui_pid" ]] && kill -0 "$webui_pid" 2>/dev/null; then
+        kill "$webui_pid" 2>/dev/null || true
+    fi
+    if [[ -n "$cog_pid" ]] && kill -0 "$cog_pid" 2>/dev/null; then
+        kill "$cog_pid" 2>/dev/null || true
+    fi
+    # Give children a moment to exit cleanly.
+    if [[ -n "$webui_pid" ]]; then wait "$webui_pid" 2>/dev/null || true; fi
+    if [[ -n "$cog_pid" ]]; then wait "$cog_pid" 2>/dev/null || true; fi
+    # Clean up auto-built binaries (no-op if user supplied paths).
+    if [[ -n "$build_dir" && -d "$build_dir" ]]; then
+        rm -rf "$build_dir"
+    fi
+}
+
+trap cleanup INT TERM EXIT
+
+# ---- start the cog -------------------------------------------------
+
+if [[ "$workspace_is_ephemeral" -eq 1 ]]; then
+    echo "retainer-with-webui: ephemeral workspace $workspace (not auto-deleted)"
+else
+    echo "retainer-with-webui: workspace $workspace (persistent — memory survives restarts)"
+fi
+
+# Seed config/identity/skills via `retainer init` when the
+# workspace doesn't already have them. For ephemeral
+# workspaces this is always (fresh temp dir); for persistent
+# workspaces this only fires on first run — subsequent runs
+# find config.toml and skip init so we don't clobber operator
+# state. Without this, `retainer serve` against an empty
+# directory has no config (falls back to mistral-small-2603),
+# no persona (curator uses backstop prompts), and no skills
+# (the cog's <available_skills> block is empty, which is why
+# the agent hallucinates skill names when asked to list).
+if [[ ! -f "$workspace/config/config.toml" ]]; then
+    echo "retainer-with-webui: seeding workspace via retainer init"
+    "$cog_bin" init "$workspace" >/dev/null
+fi
+
+echo "retainer-with-webui: starting cog"
+RETAINER_WORKSPACE="$workspace" "$cog_bin" serve --workspace "$workspace" &
+cog_pid=$!
+
+# Wait for the socket to appear (signal that the cog is past
+# bootstrap and listening).
+deadline=$((SECONDS + 30))
+while [[ ! -S "$socket" ]]; do
+    if ! kill -0 "$cog_pid" 2>/dev/null; then
+        echo "retainer-with-webui: cog exited before socket appeared" >&2
+        exit 1
+    fi
+    if [[ $SECONDS -ge $deadline ]]; then
+        echo "retainer-with-webui: timed out waiting for cog socket at $socket" >&2
+        exit 1
+    fi
+    sleep 0.2
+done
+echo "retainer-with-webui: cog ready ($socket)"
+
+# ---- start the webui -----------------------------------------------
+
+echo "retainer-with-webui: starting webui on http://$addr/"
+RETAINER_WORKSPACE="$workspace" "$webui_bin" --workspace "$workspace" --addr "$addr" &
+webui_pid=$!
+
+# Wait for the webui's HTTP to come up.
+deadline=$((SECONDS + 15))
+while ! curl -sf "http://$addr/api/health" >/dev/null 2>&1; do
+    if ! kill -0 "$webui_pid" 2>/dev/null; then
+        echo "retainer-with-webui: webui exited before becoming ready" >&2
+        exit 1
+    fi
+    if [[ $SECONDS -ge $deadline ]]; then
+        echo "retainer-with-webui: webui never became ready on http://$addr/" >&2
+        exit 1
+    fi
+    sleep 0.2
+done
+
+echo "retainer-with-webui: ready — open http://$addr/"
+
+if [[ "$open_browser" -eq 1 ]]; then
+    case "$(uname)" in
+        Darwin) open "http://$addr/" >/dev/null 2>&1 || true ;;
+        Linux)  xdg-open "http://$addr/" >/dev/null 2>&1 || true ;;
+    esac
+fi
+
+# ---- wait for either child to exit ---------------------------------
+
+# `wait -n` is bash 4.3+ but macOS ships bash 3.2; poll instead.
+# 0.25s tick is responsive enough for shutdown without burning CPU.
+exit_code=0
+while true; do
+    if ! kill -0 "$cog_pid" 2>/dev/null; then
+        wait "$cog_pid" 2>/dev/null
+        exit_code=$?
+        echo "retainer-with-webui: cog exited (code $exit_code); shutting down webui" >&2
+        break
+    fi
+    if ! kill -0 "$webui_pid" 2>/dev/null; then
+        wait "$webui_pid" 2>/dev/null
+        exit_code=$?
+        echo "retainer-with-webui: webui exited (code $exit_code); shutting down cog" >&2
+        break
+    fi
+    sleep 0.25
+done
+
+cleanup
+exit "$exit_code"

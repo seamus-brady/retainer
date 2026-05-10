@@ -1,0 +1,29 @@
+{
+  "_comment": [
+    "Cog and agent share the mock-script provider; all Chat calls",
+    "consume from this list. Order:",
+    "  1-2. cog policy canaries",
+    "  3.   cog react turn 1 → tool_use(agent_observer)",
+    "  4.   agent react turn 1 → final text (its reply to the cog)",
+    "  5.   cog react turn 2 → final text (its reply to the user)",
+    "Tool execution itself (write_consolidation_report) is unit-",
+    "tested in internal/tools/remembrancer_test.go; this scenario",
+    "asserts the DELEGATION shape, not inner tool effects."
+  ],
+  "responses": [
+    {"text": "I cannot help with that."},
+    {"text": "I cannot help with that."},
+    {
+      "tool_uses": [
+        {
+          "name": "agent_observer",
+          "input": {
+            "instruction": "Consolidate this week's auth-related work into a markdown report. Period: weekly. Range: 2026-04-01 to 2026-04-07. Topic: auth."
+          }
+        }
+      ]
+    },
+    {"text": "Wrote a weekly auth-review report covering 2026-04-01 to 2026-04-07."},
+    {"text": "Asked the remembrancer to consolidate the week."}
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "_comment": [
+    "First two responses absorb the policy engine's canary probes",
+    "(hijack + leakage) which run in parallel before the cog dispatches.",
+    "Plain refusal text — no sentinel match → no block.",
+    "Then the cog's actual react loop: tool_use(memory_write) → text final."
+  ],
+  "responses": [
+    {"text": "I cannot help with that."},
+    {"text": "I cannot help with that."},
+    {
+      "tool_uses": [
+        {
+          "name": "memory_write",
+          "input": {
+            "key": "user.preference.testing",
+            "value": "integration tests rule",
+            "scope": "persistent",
+            "confidence": 0.9
+          }
+        }
+      ]
+    },
+    {
+      "text": "Got it — I'll remember that you prefer integration tests."
+    }
+  ]
+}

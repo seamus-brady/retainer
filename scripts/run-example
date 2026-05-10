@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Run retainer against the embedded example config in a sandboxed
+# throwaway workspace under $TMPDIR. Edit internal/example/config.example.toml,
+# run this, confirm the agent boots with the documented defaults. The sandbox
+# survives across runs so logs accumulate; nuke it manually with
+# `rm -rf "${TMPDIR:-/tmp}/retainer-example"` when you want a clean slate.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+sandbox="${TMPDIR:-/tmp}/retainer-example"
+export RETAINER_WORKSPACE="$sandbox"
+mkdir -p "$sandbox/config" "$sandbox/data"
+echo "sandbox: $sandbox" >&2
+exec go run ./cmd/retainer --config internal/example/config.example.toml "$@"

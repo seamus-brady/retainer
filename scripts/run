@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Run retainer using the config installed at <config-dir>/config.toml (or
+# built-in defaults if no file exists). Forwards any extra args.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+exec go run ./cmd/retainer "$@"

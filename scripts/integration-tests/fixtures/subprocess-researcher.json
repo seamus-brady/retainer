@@ -1,0 +1,25 @@
+{
+  "_comment": [
+    "Two canary-probe responses, then the cog calls agent_researcher",
+    "(which spawns the retainer-researcher subprocess), then the",
+    "cog produces a final text reply summarising what the researcher",
+    "returned."
+  ],
+  "responses": [
+    {"text": "I cannot help with that."},
+    {"text": "I cannot help with that."},
+    {
+      "tool_uses": [
+        {
+          "name": "agent_researcher",
+          "input": {
+            "instruction": "find recent posts about auth flow design"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Researcher returned findings on the auth flow."
+    }
+  ]
+}

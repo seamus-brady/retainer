@@ -1,0 +1,48 @@
+# If you prefer the allow list template instead of the deny list, see community template:
+# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
+#
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Code coverage profiles and other test artifacts
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# env file
+.env
+
+# Editor/IDE
+# .idea/
+# .vscode/
+
+
+_impl_docs
+
+# ML model artifacts — Retainer downloads embedding models to the
+# workspace's data/models/ on first run (see internal/embed). The
+# workspace's own .gitignore (created by `retainer init`) excludes
+# data/, so the patterns below are belt-and-braces for any other
+# layout — e.g. someone pointing --workspace inside the repo.
+models/
+*.onnx
+*.safetensors
+
+# Built binaries — go build dumps these in the repo root unless -o is set.
+/retainer
+/retainer-webui

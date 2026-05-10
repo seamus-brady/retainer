@@ -1,0 +1,26 @@
+{
+  "_comment": [
+    "Cog and agent share the same mock-script provider, so all",
+    "Chat calls consume from this list. Order:",
+    "  1-2. cog policy canaries",
+    "  3.   cog react turn 1 → tool_use(agent_observer)",
+    "  4.   agent react turn 1 → final text (its reply to the cog)",
+    "  5.   cog react turn 2 → final text (its reply to the user)"
+  ],
+  "responses": [
+    {"text": "I cannot help with that."},
+    {"text": "I cannot help with that."},
+    {
+      "tool_uses": [
+        {
+          "name": "agent_observer",
+          "input": {
+            "instruction": "Mine the case archive for recurring patterns; min_cases=3."
+          }
+        }
+      ]
+    },
+    {"text": "Found a recurring auth pattern across the cases."},
+    {"text": "Looked at the case archive and found a recurring auth pattern."}
+  ]
+}

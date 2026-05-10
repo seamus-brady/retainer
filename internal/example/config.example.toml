@@ -1,0 +1,174 @@
+# Retainer workspace config template.
+#
+# This file is executable as-is. `retainer init <path>` writes a copy to
+# <path>/config/config.toml from the embedded copy of this template — no
+# need to track the source repo to use the binary.
+#
+# Workspace layout:
+#   $RETAINER_WORKSPACE/
+#   ├── config/   (this file lives here as config.toml)
+#   └── data/     (logs, cycle-log, JSONL stores; gitignored)
+#
+# Resolution priority for the workspace path:
+#   1. --workspace <path> CLI flag
+#   2. $RETAINER_WORKSPACE env var
+#   3. $HOME/retainer   (default)
+#
+# API keys come from the environment only, never this file:
+#   ANTHROPIC_API_KEY    when provider = "anthropic"
+#   MISTRAL_API_KEY      when provider = "mistral"
+#
+# Env overrides — every field below can also be set via env var
+# using the convention RETAINER_<SECTION>_<KEY> (or just
+# RETAINER_<KEY> for the top-level fields). Examples:
+#
+#   RETAINER_PROVIDER=anthropic
+#   RETAINER_COMMS_INBOX_ID=inb_abc
+#   RETAINER_CODER_PROJECT_ROOT=$HOME/code/current
+#   RETAINER_POLICY_FABRICATION_ENABLED=true
+#
+# Precedence: env > TOML > default. Env vars also pick up from a
+# .env in the current working directory or in <workspace>/.env
+# (workspace .env is layered last and won't overwrite shell
+# exports).
+#
+# String-slice fields (e.g. allowed_recipients) accept a
+# comma-separated list:
+#
+#   RETAINER_COMMS_ALLOWED_RECIPIENTS=seamus@corvideon.ie,boss@corvideon.ie
+#
+# Whitespace around each element is trimmed; empty elements are
+# dropped. Slices of non-string elements stay TOML-only.
+
+# ---------------------------------------------------------------------------
+# Provider — which LLM and what models
+# ---------------------------------------------------------------------------
+
+# Default: Anthropic. Mistral is supported but does not match
+# Anthropic's tool-use discipline on multi-turn agentic work
+# (verified empirically 2026-05-09 — Mistral fabricated tool
+# outcomes across 4 of 5 scheduled email fires; Claude doesn't
+# do that). For "$800-1500/day human role" replacement workflows
+# the cost difference is rounding error.
+provider        = "anthropic"
+task_model      = "claude-haiku-4-5-20251001"   # Cog + specialists; sized for chat-paced agentic work.
+reasoning_model = "claude-opus-4-7"             # Reserved for the model split; harder reasoning sites can route here.
+max_tokens      = 2048                          # Output tokens per call
+
+# Mistral alternative (cheaper but less reliable on multi-turn
+# tool use — the harness has the safety nets to make it usable
+# but plan extra operator vigilance). Uncomment + comment the
+# Anthropic block above:
+# provider        = "mistral"
+# task_model      = "mistral-large-latest"
+# reasoning_model = "mistral-large-latest"
+
+# max_turns       = 5                    # Consumed once the cog/react loop lands
+
+# ---------------------------------------------------------------------------
+# Agent identity
+# ---------------------------------------------------------------------------
+
+[agent]
+name      = "Nemo"
+# version = ""
+# Persona / character text lives in <workspace>/config/identity/persona.md
+# and session_preamble.md, not here. `retainer init` seeds them with
+# editable defaults; the cog re-renders them per cycle with current
+# slots ({{agent_name}}, {{date}}, {{time}}, {{workspace}}).
+
+# ---------------------------------------------------------------------------
+# Cog gates — watchdog timeout + input queue cap
+# ---------------------------------------------------------------------------
+
+[gate]
+timeout_ms      = 60000   # watchdog per non-Idle status transition
+input_queue_cap = 10      # buffered UserInputs while busy
+
+# ---------------------------------------------------------------------------
+# Cog loop — react-loop tool turns + history bounds
+# ---------------------------------------------------------------------------
+# max_tool_turns bounds the cog's react loop within a single
+# cycle (default 10, hard ceiling 20). Higher = more room for
+# multi-step work; lower = tighter runaway-loop guard.
+#
+# max_context_messages caps the running conversation history fed
+# to the LLM each cycle. Default 200 — protects multi-day
+# sessions from unbounded token costs while leaving plenty of
+# room for multi-turn work. Drops the oldest messages while
+# preserving role-alternation + tool-call pair invariants. Set
+# to 0 for unbounded (SD's default) or a smaller positive
+# number for tighter budgets.
+
+[cog]
+# max_tool_turns         = 10
+# max_context_messages   = 200   # 0 = unbounded; smaller numbers for tighter budgets
+
+# ---------------------------------------------------------------------------
+# Policy engine — refusal text + L2 scorer + canary tuning
+# ---------------------------------------------------------------------------
+
+[policy]
+input_refusal              = "I can't help with that."
+output_refusal             = "I started to answer but stopped — could you rephrase?"
+llm_scorer_timeout_ms      = 8000   # per L2 LLM call
+canary_failure_limit       = 3      # consecutive LLM failures before degraded
+
+# Fabrication-detecting output gate — Layer 3 of the
+# fabrication-prevention policy (see `project_fabrication_policy`
+# memory). Default-on. Every output cycle with at least one
+# tool call runs an extra LLM round-trip against the cycle's
+# tool log; verdicts above `min_confidence` append a
+# verification footer to the reply naming the flagged claims.
+# Below threshold the score lands in the cycle log as telemetry
+# only. Set `enabled = false` to disable if a buggy model run
+# spams false positives. Defaults: model = task_model;
+# timeout 6s; min_confidence 0.7.
+
+[policy.fabrication]
+# enabled        = true
+# model          = ""        # defaults to task_model
+# timeout_ms     = 6000
+# min_confidence = 0.7
+
+# ---------------------------------------------------------------------------
+# Memory — librarian hot-index windows
+# ---------------------------------------------------------------------------
+# Per-store windows: narrative is rolling (default 60 days); facts have no
+# window (current state — every entry is preserved in the index regardless
+# of age, with read-time half-life decay handling staleness).
+# JSONL files on disk are NEVER deleted. Windows bound only the SQLite
+# hot index loaded at startup. Older entries stay on disk for the
+# remembrancer's deep-archive tools.
+
+[memory]
+narrative_window_days = 60
+
+# ---------------------------------------------------------------------------
+# Logging — slog system log
+# ---------------------------------------------------------------------------
+
+[logging]
+verbose        = false
+retention_days = 30
+
+# ---------------------------------------------------------------------------
+# LLM retry — consumed once the retry layer lands
+# ---------------------------------------------------------------------------
+
+[retry]
+# max_retries         = 3
+# initial_delay_ms    = 500
+# rate_limit_delay_ms = 5000   # 429 backoff start
+# overload_delay_ms   = 2000   # 529 (Anthropic overload) backoff start
+# max_delay_ms        = 60000  # Cap
+
+# ---------------------------------------------------------------------------
+# Environment variables (reference)
+# ---------------------------------------------------------------------------
+# RETAINER_WORKSPACE  Override workspace dir. Default: $HOME/retainer.
+# RETAINER_CONFIG     Path to a specific config file (alternative to --config).
+# RETAINER_PROVIDER   Force provider selection (anthropic|mistral|mock).
+# RETAINER_MODEL      Override the task_model.
+# ANTHROPIC_API_KEY   Anthropic API key.
+# MISTRAL_API_KEY     Mistral API key.

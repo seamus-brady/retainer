@@ -1,0 +1,1686 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>retainer</title>
+  <style>
+    /* Source Serif 4 — bundled offline (see static/fonts/).
+       Variable font; one file covers the weight range used here.
+       Licensed under SIL Open Font License 1.1 — full text at
+       /static/fonts/OFL-LICENSE.txt. */
+    @font-face {
+      font-family: 'Source Serif 4';
+      src: url('/static/fonts/source-serif-4-latin.woff2') format('woff2');
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    /* Palette derived from the Retainer logo: warm cream
+       background, deep navy primary text, coffee brown for
+       accents and subtle structure. Light theme by default. */
+    :root {
+      --bg: #faf6ef;            /* warm cream */
+      --bg-2: #f3ebd9;          /* user-message tint */
+      --surface: #ffffff;       /* cog-message card */
+      --fg: #1c2840;            /* deep navy (logo wordmark) */
+      --fg-muted: #7a6d5d;      /* warm gray-brown */
+      --accent: #5d3520;        /* coffee brown (logo icon) */
+      --accent-soft: #8b5a3c;   /* lighter brown, for borders */
+      --accent-warning: #b8821e;
+      --accent-error: #b94838;
+      --accent-ok: #5a7a3a;
+      --border: #e8dfd1;
+      --shadow: 0 1px 2px rgba(28, 40, 64, 0.06), 0 0 0 1px rgba(28, 40, 64, 0.04);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 15px/1.6 "Source Serif 4", Charter, "Iowan Old Style",
+            Georgia, "Times New Roman", serif;
+      font-feature-settings: "kern", "liga", "onum";
+      height: 100%;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      max-width: 1180px;          /* widened to accommodate left sidebar */
+      margin: 0 auto;
+      padding: 0 1.25rem;
+    }
+    /* Two-column layout below the header: left sidebar + main chat */
+    .body-grid {
+      flex: 1;
+      display: flex;
+      gap: 1.5rem;
+      min-height: 0;              /* lets children scroll instead of growing the body */
+    }
+    .body-grid > main {
+      flex: 1;
+      min-width: 0;               /* prevent overflow from long pre/code blocks */
+    }
+    /* ---- Sidebar (day list + per-day MD export) ---- */
+    aside.sidebar {
+      flex: 0 0 200px;
+      padding: 1rem 0;
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      max-height: calc(100vh - 9rem);
+    }
+    aside.sidebar h2 {
+      margin: 0 0 0.5rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--fg-muted);
+    }
+    aside.sidebar ul {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 1.5rem;
+    }
+    aside.sidebar li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.35rem 0.5rem;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    aside.sidebar li:hover {
+      background: var(--bg-2);
+    }
+    aside.sidebar li.active {
+      background: var(--accent-soft);
+      color: var(--surface);
+    }
+    aside.sidebar li.active .day-export {
+      color: var(--surface);
+    }
+    aside.sidebar li.today {
+      font-weight: 600;
+    }
+    aside.sidebar .day-label {
+      font-variant-numeric: tabular-nums;
+      font-size: 0.92rem;
+    }
+    aside.sidebar .day-export {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.78rem;
+      padding: 0.1rem 0.35rem;
+      border-radius: 3px;
+    }
+    aside.sidebar .day-export:hover {
+      background: var(--bg);
+      color: var(--accent);
+    }
+    aside.sidebar .empty {
+      color: var(--fg-muted);
+      font-style: italic;
+      padding: 0.5rem;
+      font-size: 0.85rem;
+    }
+    /* Past-day view banner — replaces the input footer when not live */
+    .past-day-banner {
+      padding: 0.6rem 0.75rem;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      margin-bottom: 0.75rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.92rem;
+    }
+    .past-day-banner .back-to-today {
+      color: var(--accent);
+      cursor: pointer;
+      font-weight: 600;
+      background: none;
+      border: none;
+      padding: 0;
+      font-family: inherit;
+      font-size: inherit;
+    }
+    .past-day-banner .back-to-today:hover {
+      text-decoration: underline;
+    }
+
+    /* ---- Header (50% larger than the original spec) ---- */
+    header {
+      padding: 1.5rem 0 1.3rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+    }
+    .logo {
+      height: 54px;
+      width: auto;
+      display: block;
+    }
+    .header-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.15;
+      gap: 0.15rem;
+    }
+    .agent-name {
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: var(--fg);
+      letter-spacing: -0.01em;
+    }
+    .agent-name.unknown { color: var(--fg-muted); font-style: italic; font-weight: 500; }
+    .instance-id {
+      font-size: 0.78rem;
+      color: var(--fg-muted);
+      font-family: ui-monospace, "SF Mono", "JetBrains Mono", monospace;
+    }
+    .spacer { flex: 1; }
+    .badge {
+      font-size: 0.72rem;
+      padding: 0.2rem 0.625rem;
+      border-radius: 999px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--fg-muted);
+      font-weight: 500;
+    }
+    .badge.ok { color: var(--accent-ok); border-color: var(--accent-ok); }
+    .badge.error { color: var(--accent-error); border-color: var(--accent-error); }
+
+    /* ---- Message log ---- */
+    main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.25rem 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.875rem;
+    }
+    .msg {
+      max-width: 90%;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      word-wrap: break-word;
+      overflow-wrap: anywhere;
+    }
+    .msg.user {
+      background: var(--bg-2);
+      align-self: flex-end;
+      border: 1px solid var(--border);
+      white-space: pre-wrap;
+    }
+    .msg.cog {
+      background: var(--surface);
+      align-self: flex-start;
+      box-shadow: var(--shadow);
+      border-left: 3px solid var(--accent);
+    }
+    .msg.refusal { border-left-color: var(--accent-warning); }
+    .msg.error { border-left-color: var(--accent-error); color: var(--accent-error); }
+    /* Autonomous-cycle traces — scheduler / comms activity the
+       operator didn't initiate. Muted so they don't compete
+       visually with operator chat, but still legible. */
+    .msg.cog.trace {
+      background: var(--bg-2);
+      border-left: 3px solid var(--accent-soft);
+      opacity: 0.85;
+      max-width: 80%;
+    }
+    .msg.cog.trace .trace-tag {
+      display: inline-block;
+      font-family: ui-monospace, "SF Mono", "JetBrains Mono", monospace;
+      font-size: 0.72rem;
+      color: var(--fg-muted);
+      letter-spacing: 0.04em;
+      margin-bottom: 0.25rem;
+      text-transform: lowercase;
+    }
+    .msg.cog.trace .trace-body { font-size: 0.92em; }
+    .msg.cog.trace .trace-body p:last-child { margin-bottom: 0; }
+
+    /* Markdown rendering inside cog messages. */
+    .msg.cog p { margin: 0 0 0.6rem; }
+    .msg.cog p:last-child { margin-bottom: 0; }
+    .msg.cog h1, .msg.cog h2, .msg.cog h3 {
+      margin: 0.4rem 0 0.45rem;
+      font-weight: 600;
+      color: var(--fg);
+    }
+    .msg.cog h1 { font-size: 1.15rem; }
+    .msg.cog h2 { font-size: 1.05rem; }
+    .msg.cog h3 { font-size: 0.95rem; }
+    .msg.cog ul, .msg.cog ol {
+      margin: 0 0 0.6rem;
+      padding-left: 1.5rem;
+    }
+    .msg.cog li { margin-bottom: 0.15rem; }
+    .msg.cog code {
+      font-family: ui-monospace, "SF Mono", "JetBrains Mono", monospace;
+      font-size: 0.875em;
+      background: var(--bg-2);
+      padding: 0.075em 0.35em;
+      border-radius: 3px;
+    }
+    .msg.cog pre {
+      background: var(--bg-2);
+      padding: 0.7rem 0.85rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 0.4rem 0 0.6rem;
+      border: 1px solid var(--border);
+    }
+    .msg.cog pre code {
+      background: none;
+      padding: 0;
+      font-size: 0.825em;
+      line-height: 1.5;
+    }
+    .msg.cog a {
+      color: var(--accent);
+      text-decoration: underline;
+      text-decoration-color: var(--accent-soft);
+      text-underline-offset: 2px;
+    }
+    .msg.cog a:hover { text-decoration-color: var(--accent); }
+    .msg.cog blockquote {
+      margin: 0 0 0.6rem;
+      padding: 0.05rem 0.85rem;
+      border-left: 3px solid var(--border);
+      color: var(--fg-muted);
+    }
+    .msg.cog hr {
+      border: 0;
+      border-top: 1px solid var(--border);
+      margin: 0.6rem 0;
+    }
+    .msg.cog table.md-table {
+      border-collapse: collapse;
+      margin: 0.5rem 0 0.7rem;
+      font-size: 0.92em;
+      /* Tables can be wider than the message column. Let them
+         scroll horizontally inside the bubble rather than break
+         the layout. */
+      display: block;
+      overflow-x: auto;
+      max-width: 100%;
+    }
+    .msg.cog table.md-table th,
+    .msg.cog table.md-table td {
+      border: 1px solid var(--border);
+      padding: 0.35rem 0.6rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    .msg.cog table.md-table thead th {
+      background: var(--bg-2);
+      color: var(--fg);
+      font-weight: 600;
+    }
+    .msg.cog table.md-table tbody tr:nth-child(even) {
+      background: rgba(243, 235, 217, 0.4);
+    }
+
+    /* ---- Activity strip ---- */
+    .activity {
+      font-size: 0.8rem;
+      color: var(--fg-muted);
+      font-style: italic;
+      align-self: flex-start;
+      padding: 0.25rem 0.5rem;
+      min-height: 1.5rem;
+    }
+    .activity.thinking { color: var(--accent); font-style: normal; }
+    .activity.using_tools { color: var(--accent-warning); font-style: normal; }
+    .activity.retrying { color: var(--accent-warning); font-style: normal; font-weight: 500; }
+    .activity.idle { display: none; }
+
+    /* ---- Tab bar (Chat / Library) ---- */
+    .tabs {
+      display: flex;
+      gap: 0.25rem;
+      padding: 0.5rem 0 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0;
+    }
+    .tab {
+      background: none;
+      border: none;
+      padding: 0.5rem 1rem;
+      font: inherit;
+      font-size: 0.92rem;
+      color: var(--fg-muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      border-radius: 0;
+    }
+    .tab:hover { color: var(--fg); background: none; }
+    .tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* ---- Library panel ---- */
+    #library-pane {
+      display: none;
+      flex: 1;
+      flex-direction: row;
+      gap: 1.5rem;
+      min-height: 0;
+      padding: 1rem 0;
+    }
+    body.tab-library #library-pane { display: flex; }
+    body.tab-library .body-grid > main { display: none; }
+    body.tab-library aside.sidebar { display: none; }
+    body.tab-library footer { display: none; }
+    body.tab-library #activity { display: none; }
+
+    .lib-side {
+      flex: 0 0 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      overflow-y: auto;
+      max-height: calc(100vh - 12rem);
+      border-right: 1px solid var(--border);
+      padding-right: 1rem;
+    }
+    .lib-side h2 {
+      margin: 0 0 0.25rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--fg-muted);
+    }
+    .lib-filter {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-bottom: 0.5rem;
+    }
+    .lib-filter button {
+      background: var(--surface);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 0.2rem 0.6rem;
+      font-size: 0.78rem;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .lib-filter button.active {
+      background: var(--accent);
+      color: var(--bg);
+      border-color: var(--accent);
+    }
+    .lib-doc-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .lib-doc-list li {
+      padding: 0.5rem 0.6rem;
+      border-radius: 4px;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .lib-doc-list li:hover { background: var(--bg-2); }
+    .lib-doc-list li.active {
+      background: var(--bg-2);
+      border-color: var(--accent-soft);
+    }
+    .lib-doc-list .doc-title {
+      font-weight: 600;
+      color: var(--fg);
+      font-size: 0.95rem;
+      display: block;
+      margin-bottom: 0.15rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .lib-doc-list .doc-meta {
+      font-size: 0.75rem;
+      color: var(--fg-muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .lib-empty {
+      color: var(--fg-muted);
+      font-style: italic;
+      padding: 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    /* Drag-and-drop upload zone in the library sidebar. */
+    .lib-upload {
+      margin-top: 0.6rem;
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 0.8rem;
+      text-align: center;
+      cursor: pointer;
+      background: var(--surface);
+      transition: border-color 0.12s, background 0.12s;
+    }
+    .lib-upload:hover {
+      border-color: var(--accent-soft);
+    }
+    .lib-upload.dragging {
+      border-color: var(--accent);
+      background: var(--bg-2);
+    }
+    .lib-upload-hint {
+      margin: 0;
+      font-size: 0.85rem;
+      color: var(--fg-muted);
+    }
+    .lib-upload-status {
+      margin-top: 0.4rem;
+      font-size: 0.8rem;
+      color: var(--fg-muted);
+      min-height: 1em;
+    }
+    .lib-upload-status.ok { color: var(--accent-ok); }
+    .lib-upload-status.error { color: var(--accent-error); }
+
+    /* Onboarding block — replaces the bare "select a document"
+       prompt on a fresh workspace. Plain prose + step list +
+       command examples; intentionally a little understated so it
+       fades to background once the operator has docs in the
+       library and is using the right pane for content. */
+    .lib-onboard {
+      max-width: 720px;
+      padding: 0.5rem 0.25rem 1rem;
+      color: var(--fg);
+      font-size: 0.95rem;
+    }
+    .lib-onboard h2 {
+      margin: 0 0 0.5rem;
+      font-size: 1.15rem;
+      font-weight: 600;
+    }
+    .lib-onboard h3 {
+      margin: 1rem 0 0.4rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--fg-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .lib-onboard p { margin: 0 0 0.6rem; line-height: 1.55; }
+    .lib-onboard ol, .lib-onboard ul {
+      margin: 0 0 0.6rem;
+      padding-left: 1.25rem;
+    }
+    .lib-onboard li { margin-bottom: 0.45rem; line-height: 1.5; }
+    .lib-onboard code {
+      font-family: ui-monospace, "SF Mono", "JetBrains Mono", monospace;
+      font-size: 0.86em;
+      background: var(--bg-2);
+      padding: 0.05em 0.35em;
+      border-radius: 3px;
+    }
+    .lib-onboard em {
+      font-style: italic;
+      color: var(--accent);
+    }
+    .lib-onboard-link {
+      margin-top: 1rem;
+      font-size: 0.85rem;
+      color: var(--fg-muted);
+    }
+
+    .lib-main {
+      flex: 1;
+      overflow-y: auto;
+      max-height: calc(100vh - 12rem);
+      padding-right: 0.25rem;
+    }
+    .lib-doc-header {
+      margin-bottom: 1rem;
+      padding-bottom: 0.6rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .lib-doc-header h1 {
+      font-size: 1.3rem;
+      margin: 0 0 0.3rem;
+      color: var(--fg);
+    }
+    .lib-doc-header .lib-doc-meta-row {
+      font-size: 0.85rem;
+      color: var(--fg-muted);
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .lib-doc-header a.lib-raw-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+    .lib-doc-header a.lib-raw-link:hover { text-decoration: underline; }
+
+    .lib-section-tree {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 1.25rem;
+      border-left: 2px solid var(--border);
+    }
+    .lib-section-tree li {
+      padding: 0.25rem 0.6rem;
+      cursor: pointer;
+      color: var(--fg-muted);
+      font-size: 0.92rem;
+    }
+    .lib-section-tree li:hover { color: var(--fg); }
+    .lib-section-tree li.active {
+      color: var(--accent);
+      font-weight: 600;
+      border-left: 2px solid var(--accent);
+      margin-left: -2px;
+    }
+
+    .lib-section-body {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      box-shadow: var(--shadow);
+      margin-bottom: 1rem;
+    }
+    .lib-section-body h2 {
+      margin: 0 0 0.6rem;
+      font-size: 1.05rem;
+    }
+    .lib-section-body pre {
+      white-space: pre-wrap;
+      font-family: inherit;
+      font-size: inherit;
+      margin: 0;
+    }
+    .lib-citation {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-family: ui-monospace, "SF Mono", "JetBrains Mono", monospace;
+      font-size: 0.82rem;
+      color: var(--fg-muted);
+      padding: 0.4rem 0.6rem;
+      background: var(--bg-2);
+      border-radius: 4px;
+    }
+    .lib-citation button.copy {
+      background: var(--surface);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 0.15rem 0.6rem;
+      font-size: 0.78rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .lib-citation button.copy:hover { background: var(--bg); }
+    .lib-citation button.copy.copied {
+      color: var(--accent-ok);
+      border-color: var(--accent-ok);
+    }
+
+    /* ---- Admin pane (single column with collapsible sections) ---- */
+    #admin-pane {
+      display: none;
+      flex: 1;
+      flex-direction: column;
+      gap: 0.6rem;
+      padding: 1rem 0;
+      overflow-y: auto;
+      max-height: calc(100vh - 9rem);
+    }
+    body.tab-admin #admin-pane { display: flex; }
+    body.tab-admin .body-grid > main { display: none; }
+    body.tab-admin aside.sidebar { display: none; }
+    body.tab-admin footer { display: none; }
+    body.tab-admin #activity { display: none; }
+    body.tab-admin #library-pane { display: none; }
+    .admin-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      box-shadow: var(--shadow);
+    }
+    .admin-section summary {
+      cursor: pointer;
+      padding: 0.7rem 1rem;
+      font-weight: 600;
+      color: var(--fg);
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .admin-section summary::-webkit-details-marker { display: none; }
+    .admin-section summary .marker {
+      color: var(--fg-muted);
+      font-size: 0.78rem;
+      font-weight: 400;
+    }
+    .admin-section[open] summary {
+      border-bottom: 1px solid var(--border);
+    }
+    .admin-body {
+      padding: 0.7rem 1rem 1rem;
+      font-size: 0.92rem;
+    }
+    .admin-body table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    .admin-body th, .admin-body td {
+      padding: 0.4rem 0.6rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .admin-body th {
+      font-weight: 600;
+      color: var(--fg-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.74rem;
+    }
+    .admin-body dl {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 0.35rem 1rem;
+      margin: 0;
+    }
+    .admin-body dt {
+      color: var(--fg-muted);
+      font-size: 0.85rem;
+    }
+    .admin-body dd {
+      margin: 0;
+      font-family: ui-monospace, "SF Mono", "JetBrains Mono", monospace;
+      font-size: 0.85rem;
+      word-break: break-all;
+    }
+    .admin-body dd.value-error { color: var(--accent-error); }
+    .admin-body dd.value-ok { color: var(--accent-ok); }
+    .admin-body .empty {
+      color: var(--fg-muted);
+      font-style: italic;
+      font-size: 0.88rem;
+    }
+    .admin-body .status-pill {
+      display: inline-block;
+      padding: 0.05rem 0.45rem;
+      border-radius: 3px;
+      font-size: 0.78rem;
+      background: var(--bg-2);
+      color: var(--fg-muted);
+    }
+    .admin-body .status-pill.ok { color: var(--accent-ok); }
+    .admin-body .status-pill.error { color: var(--accent-error); }
+    .admin-body .status-pill.warn { color: var(--accent-warning); }
+
+    /* ---- Footer / input ---- */
+    footer {
+      padding: 0.875rem 0 1.25rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 0.625rem;
+    }
+    textarea {
+      flex: 1;
+      background: var(--surface);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.55rem 0.75rem;
+      font: inherit;
+      resize: vertical;
+      min-height: 3rem;
+      max-height: 14rem;
+      box-shadow: var(--shadow);
+    }
+    textarea:focus {
+      outline: none;
+      border-color: var(--accent-soft);
+      box-shadow: 0 0 0 3px rgba(93, 53, 32, 0.12);
+    }
+    button {
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 6px;
+      padding: 0 1.4rem;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    button:disabled {
+      background: var(--fg-muted);
+      cursor: wait;
+    }
+    button:hover:not(:disabled) { background: var(--accent-soft); }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="/static/logo.png" alt="Retainer" class="logo" />
+    <div class="header-text">
+      <span class="agent-name unknown" id="agent-name">connecting…</span>
+      <span class="instance-id" id="instance-id"></span>
+    </div>
+    <div class="spacer"></div>
+    <span class="badge" id="status">connecting…</span>
+  </header>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab active" id="tab-chat" role="tab" aria-selected="true">Chat</button>
+    <button class="tab" id="tab-admin" role="tab" aria-selected="false">Admin</button>
+  </nav>
+  <section id="admin-pane" aria-label="Admin">
+    <details class="admin-section" id="admin-workspace" open>
+      <summary>Workspace<span class="marker">paths · identity · lock</span></summary>
+      <div class="admin-body" id="admin-workspace-body"><div class="empty">loading…</div></div>
+    </details>
+    <details class="admin-section" id="admin-cycles">
+      <summary>Recent cycles<span class="marker">last 20</span></summary>
+      <div class="admin-body" id="admin-cycles-body"><div class="empty">loading…</div></div>
+    </details>
+    <details class="admin-section" id="admin-scheduler">
+      <summary>Scheduler<span class="marker">active jobs</span></summary>
+      <div class="admin-body" id="admin-scheduler-body"><div class="empty">loading…</div></div>
+    </details>
+    <details class="admin-section" id="admin-comms">
+      <summary>Comms<span class="marker">last 50, metadata only</span></summary>
+      <div class="admin-body" id="admin-comms-body"><div class="empty">loading…</div></div>
+    </details>
+    <details class="admin-section" id="admin-disk">
+      <summary>Disk<span class="marker">data dir size</span></summary>
+      <div class="admin-body" id="admin-disk-body"><div class="empty">loading…</div></div>
+    </details>
+    <details class="admin-section" id="admin-health">
+      <summary>Health<span class="marker">system actor state files</span></summary>
+      <div class="admin-body" id="admin-health-body"><div class="empty">loading…</div></div>
+    </details>
+  </section>
+  <div class="body-grid">
+    <aside class="sidebar" aria-label="Chat history by day">
+      <h2>Chats</h2>
+      <ul id="day-list"></ul>
+    </aside>
+    <main id="log" aria-live="polite"></main>
+  </div>
+  <div id="activity" class="activity idle"></div>
+  <footer id="footer">
+    <textarea id="input" placeholder="message the cog… (enter to send, shift-enter for newline)" rows="2"></textarea>
+    <button id="send">send</button>
+  </footer>
+  <script>
+    (function () {
+      // ---- DOM ----
+      const logEl = document.getElementById('log');
+      const inputEl = document.getElementById('input');
+      const sendBtn = document.getElementById('send');
+      const statusEl = document.getElementById('status');
+      const agentNameEl = document.getElementById('agent-name');
+      const instanceIdEl = document.getElementById('instance-id');
+      const activityEl = document.getElementById('activity');
+
+      // ---- Markdown rendering ----
+      // Handles the subset the LLM realistically emits: paragraphs,
+      // headings, bold/italic, inline code, fenced code blocks,
+      // bullet + numbered lists, links, blockquotes, horizontal rules.
+      // All input is HTML-escaped FIRST; only structural markup is
+      // injected. URL protocols are whitelisted to block javascript:
+      // payloads if a model produces one.
+      function escapeHTML(s) {
+        return s.replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+      }
+      function safeURL(url) {
+        const trimmed = url.trim();
+        if (/^(https?:|mailto:|#|\/)/i.test(trimmed)) return trimmed;
+        return '#';
+      }
+      function renderMarkdown(input) {
+        // Lift code blocks first using sentinel tokens so their
+        // contents skip the rest of the pipeline.
+        const blocks = [];
+        let text = input.replace(/```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
+          const i = blocks.length;
+          const safe = escapeHTML(code.replace(/\n$/, ''));
+          blocks.push('<pre><code>' + safe + '</code></pre>');
+          return ' BLOCK' + i + ' ';
+        });
+
+        text = escapeHTML(text);
+
+        // Inline code (after escaping; backticks survive escapeHTML).
+        text = text.replace(/`([^`]+)`/g, (_, code) => '<code>' + code + '</code>');
+
+        // Bold then italic. Bold first because **x** would otherwise
+        // partial-match as italic.
+        text = text.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+        text = text.replace(/(^|[^\w*])\*([^*\n]+)\*(?=[^\w*]|$)/g, '$1<em>$2</em>');
+
+        // Links — sanitize URL.
+        text = text.replace(/\[([^\]\n]+)\]\(([^)\n]+)\)/g,
+          (_, label, url) =>
+            '<a href="' + escapeHTML(safeURL(url)) +
+            '" target="_blank" rel="noopener noreferrer">' + label + '</a>');
+
+        // Lift GitHub-style tables BEFORE the line-by-line pass.
+        // Browsers render <table> natively; we just need to detect
+        // the markdown shape and emit HTML. Sentinel uses NUL bytes
+        // (matching the code-block convention above) so no markdown
+        // source can collide with it.
+        const tables = [];
+        text = text.replace(
+          /^\|.+\|[ \t]*\n\|[-:| \t]+\|[ \t]*\n(?:\|.+\|[ \t]*\n?)+/gm,
+          (block) => {
+            const html = renderMarkdownTable(block);
+            if (!html) return block;
+            const i = tables.length;
+            tables.push(html);
+            return '\n\n TBL' + i + ' \n\n';
+          });
+
+        // Line-by-line: headings, lists, blockquotes, horizontal
+        // rule. Blank lines flush any open list.
+        const lines = text.split('\n');
+        const out = [];
+        let listType = null; // 'ul' | 'ol' | null
+        let inBlockquote = false;
+
+        const closeList = () => { if (listType) { out.push('</' + listType + '>'); listType = null; } };
+        const closeBlockquote = () => { if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; } };
+
+        for (const raw of lines) {
+          const line = raw;
+
+          // Heading
+          let m = /^(#{1,3}) (.+)$/.exec(line);
+          if (m) {
+            closeList(); closeBlockquote();
+            const lvl = m[1].length;
+            out.push('<h' + lvl + '>' + m[2] + '</h' + lvl + '>');
+            continue;
+          }
+
+          // Horizontal rule
+          if (/^---+\s*$/.test(line)) {
+            closeList(); closeBlockquote();
+            out.push('<hr>');
+            continue;
+          }
+
+          // Blockquote
+          m = /^&gt; (.+)$/.exec(line);
+          if (m) {
+            closeList();
+            if (!inBlockquote) { out.push('<blockquote>'); inBlockquote = true; }
+            out.push('<p>' + m[1] + '</p>');
+            continue;
+          } else if (inBlockquote && line.trim() === '') {
+            closeBlockquote();
+            continue;
+          }
+
+          // Bullet list
+          m = /^- (.+)$/.exec(line);
+          if (m) {
+            closeBlockquote();
+            if (listType !== 'ul') { closeList(); out.push('<ul>'); listType = 'ul'; }
+            out.push('<li>' + m[1] + '</li>');
+            continue;
+          }
+
+          // Numbered list
+          m = /^\d+\. (.+)$/.exec(line);
+          if (m) {
+            closeBlockquote();
+            if (listType !== 'ol') { closeList(); out.push('<ol>'); listType = 'ol'; }
+            out.push('<li>' + m[1] + '</li>');
+            continue;
+          }
+
+          // Blank line ends lists / blockquotes.
+          if (line.trim() === '') {
+            closeList(); closeBlockquote();
+          }
+
+          out.push(line);
+        }
+        closeList();
+        closeBlockquote();
+
+        text = out.join('\n');
+
+        // Paragraph-wrap chunks separated by blank lines, unless
+        // already block-level.
+        text = text.split(/\n{2,}/).map(chunk => {
+          chunk = chunk.trim();
+          if (!chunk) return '';
+          if (/^<(h[1-3]|ul|ol|pre|blockquote|hr|table)/.test(chunk) ||
+              /^ BLOCK\d+ $/.test(chunk) ||
+              /^ TBL\d+ $/.test(chunk)) {
+            return chunk;
+          }
+          return '<p>' + chunk.replace(/\n/g, '<br>') + '</p>';
+        }).join('\n');
+
+        // Restore code blocks + tables.
+        text = text.replace(/ BLOCK(\d+) /g, (_, i) => blocks[Number(i)]);
+        text = text.replace(/ TBL(\d+) /g, (_, i) => tables[Number(i)]);
+
+        return text;
+      }
+
+      // renderMarkdownTable converts a markdown table block into
+      // HTML. Cells preserve any inline markdown that was already
+      // transformed (bold / italic / code / links applied earlier
+      // in the pipeline). Returns '' on malformed input — the
+      // caller passes the raw block through unchanged.
+      function renderMarkdownTable(block) {
+        const rawLines = block.split('\n').filter(l => l.trim().length > 0);
+        if (rawLines.length < 2) return '';
+        if (!/^\|[-:| \t]+\|[ \t]*$/.test(rawLines[1])) return '';
+
+        const splitRow = (line) => {
+          const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+          return trimmed.split('|').map(c => c.trim());
+        };
+
+        const header = splitRow(rawLines[0]);
+        const bodyRows = rawLines.slice(2).map(splitRow);
+
+        let html = '<table class="md-table"><thead><tr>';
+        for (const cell of header) {
+          html += '<th>' + cell + '</th>';
+        }
+        html += '</tr></thead><tbody>';
+        for (const row of bodyRows) {
+          html += '<tr>';
+          for (let i = 0; i < header.length; i++) {
+            const cell = i < row.length ? row[i] : '';
+            html += '<td>' + cell + '</td>';
+          }
+          html += '</tr>';
+        }
+        html += '</tbody></table>';
+        return html;
+      }
+
+      // ---- Message log ----
+      function appendUserMsg(text) {
+        const wrap = document.createElement('div');
+        wrap.className = 'msg user';
+        wrap.textContent = text;
+        logEl.appendChild(wrap);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      function appendCogMsg(body, kind) {
+        const wrap = document.createElement('div');
+        wrap.className = 'msg cog' + (kind ? ' ' + kind : '');
+        wrap.innerHTML = renderMarkdown(body || '(empty reply)');
+        logEl.appendChild(wrap);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      function appendErrorMsg(body) {
+        const wrap = document.createElement('div');
+        wrap.className = 'msg cog error';
+        wrap.textContent = body;
+        logEl.appendChild(wrap);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      // appendTraceMsg renders an autonomous-cycle reply.
+      // Source is "scheduler" / "comms" / "autonomous" — appears
+      // as a small label on the trace bubble so the operator
+      // knows what kicked off the cycle.
+      function appendTraceMsg(body, source) {
+        const wrap = document.createElement('div');
+        wrap.className = 'msg cog trace';
+        const tag = document.createElement('span');
+        tag.className = 'trace-tag';
+        tag.textContent = '⟲ ' + (source || 'autonomous');
+        wrap.appendChild(tag);
+        const txt = document.createElement('div');
+        txt.className = 'trace-body';
+        txt.innerHTML = renderMarkdown(body || '(empty trace)');
+        wrap.appendChild(txt);
+        logEl.appendChild(wrap);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      // ---- Header state ----
+      function setStatus(text, cls) {
+        statusEl.textContent = text;
+        statusEl.className = 'badge ' + (cls || '');
+      }
+      function setIdentity(agentName, instanceId) {
+        if (agentName) {
+          agentNameEl.textContent = agentName;
+          agentNameEl.classList.remove('unknown');
+        }
+        if (instanceId) {
+          instanceIdEl.textContent = instanceId;
+        }
+      }
+
+      // ---- Activity strip ----
+      // m carries the full activity envelope so retry-specific fields
+      // (retry_attempt, retry_delay_ms, retry_reason) are available
+      // when status === 'retrying' — surfaces the wait so the
+      // operator doesn't think the agent died during a 15-60s
+      // backoff.
+      function setActivity(m) {
+        const status = m && m.status;
+        if (!status || status === 'idle') {
+          activityEl.className = 'activity idle';
+          activityEl.textContent = '';
+          return;
+        }
+        let label;
+        if (status === 'retrying') {
+          const reason = m.retry_reason === 'rate_limited'
+            ? 'rate limited'
+            : (m.retry_reason || 'retrying');
+          const secs = Math.round((m.retry_delay_ms || 0) / 1000);
+          if (m.retry_max_attempts) {
+            label = `${reason} · retry ${m.retry_attempt}/${m.retry_max_attempts} · ${secs}s`;
+          } else {
+            label = `${reason} · ${secs}s`;
+          }
+        } else {
+          label = status.replace(/_/g, ' ');
+          if (m.turn && m.max_turns) label += ' · turn ' + m.turn + '/' + m.max_turns;
+          if (m.tools && m.tools.length) label += ' · ' + m.tools.join(', ');
+          if (m.input_tokens || m.output_tokens) {
+            label += ' · ' + (m.input_tokens || 0) + ' in / ' + (m.output_tokens || 0) + ' out';
+          }
+        }
+        activityEl.className = 'activity ' + status;
+        activityEl.textContent = label;
+      }
+
+      // ---- Send ----
+      async function send() {
+        const text = inputEl.value.trim();
+        if (!text) return;
+        sendBtn.disabled = true;
+        appendUserMsg(text);
+        inputEl.value = '';
+        try {
+          const res = await fetch('/api/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ input: text }),
+          });
+          if (!res.ok) {
+            const errBody = await res.text();
+            appendErrorMsg('submit failed: ' + errBody);
+          }
+        } catch (err) {
+          appendErrorMsg('submit error: ' + err.message);
+        } finally {
+          sendBtn.disabled = false;
+          inputEl.focus();
+        }
+      }
+
+      sendBtn.addEventListener('click', send);
+      inputEl.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' && !ev.shiftKey) {
+          ev.preventDefault();
+          send();
+        }
+      });
+
+      // ---- SSE stream ----
+      function openStream() {
+        const es = new EventSource('/api/stream');
+        es.addEventListener('ready', function (ev) {
+          const m = JSON.parse(ev.data);
+          setStatus('connected', 'ok');
+          setIdentity(m.agent_name, m.instance_id);
+        });
+        es.addEventListener('reply', function (ev) {
+          const m = JSON.parse(ev.data);
+          let kind = '';
+          if (m.reply_kind === 'refusal') kind = 'refusal';
+          if (m.reply_kind === 'error') kind = 'error';
+          appendCogMsg(m.body, kind);
+          setActivity({status: 'idle'});
+        });
+        es.addEventListener('activity', function (ev) {
+          const m = JSON.parse(ev.data);
+          setActivity(m);
+        });
+        es.addEventListener('trace', function (ev) {
+          // Autonomous-cycle reply (scheduler / comms-poller). The
+          // operator didn't initiate this cycle but should see it
+          // pass through. Renders muted/italic with a [trace ·
+          // <source>] tag so it's visually distinct from operator
+          // chat. Stays in the live log only — past-day mode
+          // re-renders from the day-view JSON which already
+          // contains autonomous turns via the cycle log.
+          if (viewingDay !== null) return;
+          const m = JSON.parse(ev.data);
+          appendTraceMsg(m.body || '(empty trace)', m.trace_source || 'autonomous');
+        });
+        es.addEventListener('error', function (ev) {
+          if (ev.data) {
+            try {
+              const m = JSON.parse(ev.data);
+              appendErrorMsg(m.message || 'error');
+            } catch (_) {}
+          }
+          setStatus('disconnected', 'error');
+        });
+        es.onerror = function () {
+          setStatus('disconnected', 'error');
+        };
+      }
+
+      // ---- Day navigation (webui v2 PR 1) ----
+      // Sidebar lists every date with cycle-log activity. Clicking
+      // a past day swaps the live chat for a static transcript;
+      // clicking "today" returns to live mode. The MD-download
+      // link per day hits the export endpoint directly.
+      const dayListEl = document.getElementById('day-list');
+      const footerEl = document.getElementById('footer');
+      // Transient state: which day the operator is currently
+      // viewing. null = live (today). When set to a YYYY-MM-DD
+      // string, the log shows that day's transcript and the
+      // input footer is hidden.
+      let viewingDay = null;
+
+      function todayDate() {
+        const d = new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      }
+
+      function renderDayList(dates) {
+        const today = todayDate();
+        // Always include today at the top, even if no cycles yet.
+        const merged = dates.includes(today) ? dates : [today, ...dates];
+        if (merged.length === 0) {
+          dayListEl.innerHTML = '<li class="empty">no chat history yet</li>';
+          return;
+        }
+        dayListEl.innerHTML = '';
+        for (const date of merged) {
+          const li = document.createElement('li');
+          li.dataset.date = date;
+          const labelText = date === today ? `Today · ${date}` : date;
+          if (date === today) li.classList.add('today');
+          if (viewingDay === null && date === today) li.classList.add('active');
+          if (viewingDay === date) li.classList.add('active');
+          const label = document.createElement('span');
+          label.className = 'day-label';
+          label.textContent = labelText;
+          label.addEventListener('click', () => switchToDay(date === today ? null : date));
+          li.appendChild(label);
+          const exportLink = document.createElement('a');
+          exportLink.className = 'day-export';
+          exportLink.href = `/api/days/${date}/export.md`;
+          exportLink.title = `Download ${date} as markdown`;
+          exportLink.textContent = '↓ md';
+          exportLink.addEventListener('click', (e) => e.stopPropagation()); // don't trigger row switch
+          li.appendChild(exportLink);
+          dayListEl.appendChild(li);
+        }
+      }
+
+      function refreshDayList() {
+        fetch('/api/days')
+          .then(r => r.json())
+          .then(data => renderDayList(data.dates || []))
+          .catch(() => renderDayList([]));
+      }
+
+      // switchToDay(null) → live mode (re-attach SSE);
+      // switchToDay("2026-05-09") → past day view (suspend SSE,
+      // load static transcript, hide input footer).
+      function switchToDay(date) {
+        viewingDay = date;
+        refreshDayList(); // re-render to update active class
+        if (date === null) {
+          // Back to live. The SSE is still running in the
+          // background; just clear the synthetic past-day banner
+          // and restore the input.
+          footerEl.style.display = '';
+          // Strip any past-day banner; existing live messages stay.
+          const banner = document.getElementById('past-day-banner');
+          if (banner) banner.remove();
+          // Don't wipe the live log — operator may want to see what
+          // landed while they were browsing.
+          return;
+        }
+        // Past day. Hide input, render static transcript.
+        footerEl.style.display = 'none';
+        renderPastDay(date);
+      }
+
+      function renderPastDay(date) {
+        // Wipe the log; render a banner + the day's turns.
+        logEl.innerHTML = '';
+        const banner = document.createElement('div');
+        banner.id = 'past-day-banner';
+        banner.className = 'past-day-banner';
+        const left = document.createElement('span');
+        left.textContent = `Viewing ${date} (read-only)`;
+        const right = document.createElement('button');
+        right.className = 'back-to-today';
+        right.textContent = '← back to today';
+        right.addEventListener('click', () => switchToDay(null));
+        banner.appendChild(left);
+        banner.appendChild(right);
+        logEl.appendChild(banner);
+
+        fetch(`/api/days/${encodeURIComponent(date)}`)
+          .then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+          })
+          .then(data => {
+            const turns = data.turns || [];
+            if (turns.length === 0) {
+              const empty = document.createElement('div');
+              empty.className = 'msg';
+              empty.style.color = 'var(--fg-muted)';
+              empty.style.fontStyle = 'italic';
+              empty.textContent = 'No cycles on this date.';
+              logEl.appendChild(empty);
+              return;
+            }
+            for (const t of turns) {
+              if (t.role === 'user') {
+                appendUserMsg(t.text);
+              } else if (t.role === 'assistant') {
+                appendCogMsg(t.text);
+              } else if (t.role === 'error') {
+                appendErrorMsg(t.text);
+              }
+            }
+            logEl.scrollTop = 0;
+          })
+          .catch(err => {
+            const fail = document.createElement('div');
+            fail.className = 'msg error';
+            fail.textContent = `Failed to load ${date}: ${err.message}`;
+            logEl.appendChild(fail);
+          });
+      }
+
+      // ---- Tab toggle (chat / admin) ----
+      const tabChatEl = document.getElementById('tab-chat');
+      const tabAdminEl = document.getElementById('tab-admin');
+
+      function showTab(name) {
+        document.body.classList.toggle('tab-admin', name === 'admin');
+        for (const [el, n] of [[tabChatEl, 'chat'], [tabAdminEl, 'admin']]) {
+          el.classList.toggle('active', name === n);
+          el.setAttribute('aria-selected', name === n);
+        }
+        if (name === 'admin') {
+          // Re-fetch each time the admin tab is shown — the operator
+          // wants fresh state, and the surface is small enough that
+          // a few hundred ms of fetches is fine.
+          loadAdminAll();
+        }
+      }
+      tabChatEl.addEventListener('click', () => showTab('chat'));
+      tabAdminEl.addEventListener('click', () => showTab('admin'));
+
+      // ---- Admin tab ----
+      // Read-only operator-diagnostic surface. Each section maps to
+      // one /api/admin/* endpoint. Sections render independently —
+      // a 500 in one doesn't blank the others.
+      function loadAdminAll() {
+        loadAdminWorkspace();
+        loadAdminCycles();
+        loadAdminScheduler();
+        loadAdminComms();
+        loadAdminDisk();
+        loadAdminHealth();
+      }
+
+      function adminBody(id) { return document.getElementById(id + '-body'); }
+      function adminLoading(id) {
+        adminBody(id).innerHTML = '<div class="empty">loading…</div>';
+      }
+      function adminError(id, msg) {
+        const body = adminBody(id);
+        body.innerHTML = '';
+        const div = document.createElement('div');
+        div.className = 'empty';
+        div.textContent = 'failed: ' + msg;
+        body.appendChild(div);
+      }
+      function fmtBytes(n) {
+        if (!n) return '0 B';
+        const u = ['B','KB','MB','GB','TB'];
+        let i = 0;
+        while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+        return n.toFixed(i ? 1 : 0) + ' ' + u[i];
+      }
+      function fmtTime(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        if (isNaN(d)) return iso;
+        return d.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+      }
+      function fmtDuration(ms) {
+        if (!ms) return '—';
+        if (ms < 1000) return ms + ' ms';
+        return (ms / 1000).toFixed(2) + ' s';
+      }
+
+      function loadAdminWorkspace() {
+        adminLoading('admin-workspace');
+        fetch('/api/admin/workspace')
+          .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
+          .then(d => renderAdminWorkspace(d))
+          .catch(e => adminError('admin-workspace', e));
+      }
+
+      function renderAdminWorkspace(d) {
+        const body = adminBody('admin-workspace');
+        body.innerHTML = '';
+        const dl = document.createElement('dl');
+        const rows = [
+          ['Workspace dir', d.workspace_dir || ''],
+          ['Data dir', d.data_dir || ''],
+          ['Socket', d.socket_path || ''],
+          ['Connected', d.connected ? 'yes' : 'no'],
+          ['Agent name', d.agent_name || '(unknown)'],
+          ['Agent UUID', d.agent_uuid || '(not yet minted)'],
+          ['Instance ID', d.instance_id || '(unknown)'],
+          ['Lock holder PID', d.lock_holder_pid ? String(d.lock_holder_pid) : '(no lock file)'],
+        ];
+        for (const [k, v] of rows) {
+          const dt = document.createElement('dt');
+          dt.textContent = k;
+          const dd = document.createElement('dd');
+          dd.textContent = v;
+          if (k === 'Connected') dd.classList.add(d.connected ? 'value-ok' : 'value-error');
+          dl.appendChild(dt);
+          dl.appendChild(dd);
+        }
+        body.appendChild(dl);
+      }
+
+      function loadAdminCycles() {
+        adminLoading('admin-cycles');
+        fetch('/api/admin/cycles')
+          .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
+          .then(d => renderAdminCycles(d.cycles || []))
+          .catch(e => adminError('admin-cycles', e));
+      }
+
+      function renderAdminCycles(cycles) {
+        const body = adminBody('admin-cycles');
+        body.innerHTML = '';
+        if (cycles.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'empty';
+          empty.textContent = 'no cycles yet';
+          body.appendChild(empty);
+          return;
+        }
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        thead.innerHTML = '<tr><th>started</th><th>cycle id</th><th>status</th><th>duration</th><th>tools</th></tr>';
+        table.appendChild(thead);
+        const tbody = document.createElement('tbody');
+        for (const c of cycles) {
+          const tr = document.createElement('tr');
+          const cells = [
+            fmtTime(c.started_at),
+            (c.cycle_id || '').slice(0, 8),
+            c.status || '—',
+            fmtDuration(c.duration_ms),
+            String(c.tool_count || 0),
+          ];
+          for (const v of cells) {
+            const td = document.createElement('td');
+            td.textContent = v;
+            tr.appendChild(td);
+          }
+          if (c.status === 'error' || c.status === 'abandoned') {
+            tr.children[2].innerHTML = '';
+            const pill = document.createElement('span');
+            pill.className = 'status-pill error';
+            pill.textContent = c.status;
+            tr.children[2].appendChild(pill);
+            if (c.error) {
+              tr.children[2].appendChild(document.createTextNode(' '));
+              const note = document.createElement('span');
+              note.style.fontSize = '0.78rem';
+              note.style.color = 'var(--fg-muted)';
+              note.textContent = c.error;
+              tr.children[2].appendChild(note);
+            }
+          } else if (c.status === 'complete') {
+            tr.children[2].innerHTML = '';
+            const pill = document.createElement('span');
+            pill.className = 'status-pill ok';
+            pill.textContent = 'complete';
+            tr.children[2].appendChild(pill);
+          }
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        body.appendChild(table);
+      }
+
+      function loadAdminScheduler() {
+        adminLoading('admin-scheduler');
+        fetch('/api/admin/scheduler')
+          .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
+          .then(d => renderAdminScheduler(d.jobs || []))
+          .catch(e => adminError('admin-scheduler', e));
+      }
+
+      function renderAdminScheduler(jobs) {
+        const body = adminBody('admin-scheduler');
+        body.innerHTML = '';
+        if (jobs.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'empty';
+          empty.textContent = 'no active jobs';
+          body.appendChild(empty);
+          return;
+        }
+        const table = document.createElement('table');
+        table.innerHTML = '<thead><tr><th>name</th><th>kind</th><th>cron / fire_at</th><th>last fire</th><th>fired</th></tr></thead>';
+        const tbody = document.createElement('tbody');
+        for (const j of jobs) {
+          const tr = document.createElement('tr');
+          const cells = [
+            j.name || '(unnamed)',
+            j.kind || '',
+            j.cron || (j.fire_at ? fmtTime(j.fire_at) : ''),
+            j.last_fired_at ? fmtTime(j.last_fired_at) : '—',
+            String(j.fired_count || 0),
+          ];
+          for (const v of cells) {
+            const td = document.createElement('td');
+            td.textContent = v;
+            tr.appendChild(td);
+          }
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        body.appendChild(table);
+      }
+
+      function loadAdminComms() {
+        adminLoading('admin-comms');
+        fetch('/api/admin/comms')
+          .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
+          .then(d => renderAdminComms(d.messages || []))
+          .catch(e => adminError('admin-comms', e));
+      }
+
+      function renderAdminComms(msgs) {
+        const body = adminBody('admin-comms');
+        body.innerHTML = '';
+        if (msgs.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'empty';
+          empty.textContent = 'no messages';
+          body.appendChild(empty);
+          return;
+        }
+        const note = document.createElement('div');
+        note.className = 'empty';
+        note.style.marginBottom = '0.5rem';
+        note.textContent = 'Bodies are not shown — ask the cog through chat to read a specific message.';
+        body.appendChild(note);
+        const table = document.createElement('table');
+        table.innerHTML = '<thead><tr><th>when</th><th>direction</th><th>subject</th><th>status</th></tr></thead>';
+        const tbody = document.createElement('tbody');
+        for (const m of msgs) {
+          const tr = document.createElement('tr');
+          const cells = [
+            fmtTime(m.timestamp),
+            m.direction || '',
+            m.subject || '(no subject)',
+            m.status || '',
+          ];
+          for (const v of cells) {
+            const td = document.createElement('td');
+            td.textContent = v;
+            tr.appendChild(td);
+          }
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        body.appendChild(table);
+      }
+
+      function loadAdminDisk() {
+        adminLoading('admin-disk');
+        fetch('/api/admin/disk')
+          .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
+          .then(d => renderAdminDisk(d))
+          .catch(e => adminError('admin-disk', e));
+      }
+
+      function renderAdminDisk(d) {
+        const body = adminBody('admin-disk');
+        body.innerHTML = '';
+        const total = document.createElement('div');
+        total.style.marginBottom = '0.6rem';
+        total.style.fontWeight = '600';
+        total.textContent = 'Total: ' + fmtBytes(d.total_bytes || 0);
+        body.appendChild(total);
+        const rows = d.by_subsystem || [];
+        if (rows.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'empty';
+          empty.textContent = 'data dir empty';
+          body.appendChild(empty);
+          return;
+        }
+        const table = document.createElement('table');
+        table.innerHTML = '<thead><tr><th>subsystem</th><th>bytes</th></tr></thead>';
+        const tbody = document.createElement('tbody');
+        for (const r of rows) {
+          const tr = document.createElement('tr');
+          const td1 = document.createElement('td');
+          td1.textContent = r.name;
+          const td2 = document.createElement('td');
+          td2.textContent = fmtBytes(r.bytes);
+          tr.appendChild(td1);
+          tr.appendChild(td2);
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        body.appendChild(table);
+      }
+
+      function loadAdminHealth() {
+        adminLoading('admin-health');
+        fetch('/api/admin/health')
+          .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
+          .then(d => renderAdminHealth(d.actors || []))
+          .catch(e => adminError('admin-health', e));
+      }
+
+      function renderAdminHealth(actors) {
+        const body = adminBody('admin-health');
+        body.innerHTML = '';
+        const table = document.createElement('table');
+        table.innerHTML = '<thead><tr><th>actor</th><th>state file</th><th>last write</th></tr></thead>';
+        const tbody = document.createElement('tbody');
+        for (const a of actors) {
+          const tr = document.createElement('tr');
+          const td1 = document.createElement('td');
+          td1.textContent = a.name;
+          const td2 = document.createElement('td');
+          td2.textContent = a.state_file;
+          td2.style.fontFamily = 'ui-monospace, "SF Mono", "JetBrains Mono", monospace';
+          td2.style.fontSize = '0.78rem';
+          const td3 = document.createElement('td');
+          if (a.exists && a.last_write_at) {
+            td3.textContent = fmtTime(a.last_write_at);
+          } else {
+            const pill = document.createElement('span');
+            pill.className = 'status-pill warn';
+            pill.textContent = 'never written';
+            td3.appendChild(pill);
+          }
+          tr.appendChild(td1);
+          tr.appendChild(td2);
+          tr.appendChild(td3);
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        body.appendChild(table);
+      }
+
+      // ---- Boot ----
+      // Initial /api/health for fast first-paint identity (don't
+      // wait for the SSE ready handshake).
+      fetch('/api/health').then(r => r.json()).then(h => {
+        if (h.connected) setStatus('connected', 'ok');
+        setIdentity(h.agent_name, h.instance_id);
+      }).catch(() => {});
+
+      // Day list refresh — once on boot, then once per minute so
+      // newly-active days show up in the sidebar without needing
+      // the operator to reload.
+      refreshDayList();
+      setInterval(refreshDayList, 60000);
+
+      openStream();
+      inputEl.focus();
+    })();
+  </script>
+</body>
+</html>

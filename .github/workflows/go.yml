@@ -1,0 +1,66 @@
+# Build + test workflow.
+#
+# Tracks the Go version declared in go.mod (currently 1.25+) via
+# go-version-file so a future bump in go.mod automatically updates
+# CI. Avoids the trap where the workflow pins an older Go that
+# can't parse a newer go.mod's `go X.Y.Z` directive.
+
+name: Go
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+        cache: true
+
+    - name: Vet
+      run: go vet ./...
+
+    - name: Build
+      run: go build -v ./...
+
+    - name: Test (race-clean)
+      run: go test -race -v ./...
+
+  integration:
+    # End-to-end smoke through `retainer send` — bash + jq drives
+    # the production cog setup against the mock provider, asserts on
+    # the JSONL artifacts the workspace writes out. Runs in parallel
+    # with the build job (independent — it does its own go build).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+        cache: true
+
+    - name: Verify jq is installed
+      # ubuntu-latest images ship jq; assert version up front so a
+      # future image change surfaces here instead of as a cryptic
+      # bash error inside one of the scenarios.
+      run: jq --version
+
+    - name: Run integration suite
+      # WK_TEST_VERBOSE=1 surfaces the binary's stderr inside the
+      # action log, so a failing cycle is debuggable without
+      # re-running locally.
+      env:
+        WK_TEST_VERBOSE: "1"
+      run: bash scripts/integration-tests/run-all.sh

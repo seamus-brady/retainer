@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Run retainer against the embedded example config in a NEW sandbox
+# each time. Unlike scripts/run-example, this minted-via-mktemp sandbox
+# is unique per invocation — useful when you want a clean librarian /
+# cycle-log on every run (e.g. testing first-cycle bootstrap behaviour
+# or comparing identical runs side-by-side).
+#
+# The sandbox is left on disk after exit so logs / narrative JSONL /
+# cycle-log JSONL stay available for inspection. Path is printed to
+# stderr at startup. Clean up with `rm -rf <printed-path>` when done.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+# macOS bsd-mktemp treats `-t prefix` as prefix-only mode and leaves
+# the X-template literal — so `mktemp -d -t foo.XXXXXX` produces
+# /var/folders/.../foo.XXXXXX.r8g3vBp9 with literal X's in the middle.
+# Linux GNU-mktemp substitutes them. The portable shape is to hand
+# `mktemp -d` a fully-resolved template under $TMPDIR so both
+# implementations substitute the X-string in place. Same workaround
+# as scripts/retainer-with-webui::mktemp_dir.
+tmp="${TMPDIR:-/tmp}"
+tmp="${tmp%/}"
+sandbox="$(mktemp -d "$tmp/retainer-example.XXXXXX")"
+export RETAINER_WORKSPACE="$sandbox"
+mkdir -p "$sandbox/config" "$sandbox/data"
+echo "sandbox: $sandbox" >&2
+exec go run ./cmd/retainer --config internal/example/config.example.toml "$@"
